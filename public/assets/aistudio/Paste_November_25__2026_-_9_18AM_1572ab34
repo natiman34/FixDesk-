@@ -1,0 +1,1646 @@
+# FIXDESK — MASTER DEVELOPMENT PROMPT
+## IT Asset Management, IT Operations & Maintenance Platform — Web and Windows Desktop
+
+Act as a senior full-stack software engineer, UI/UX designer, systems architect, cybersecurity engineer and product designer.
+
+Build a complete, professional application called **FixDesk**.
+
+FixDesk is an IT Operations and Asset Management platform designed for NGOs, schools, small and medium businesses, internal IT departments and IT technicians.
+
+The application must consist of:
+
+1. A fully functional Web Application.
+2. A fully functional Windows Desktop Application.
+3. A shared architecture, business logic, database models and design system.
+4. Offline-first functionality for the Windows desktop application.
+5. A scalable architecture for future mobile applications.
+
+**IMPORTANT: FixDesk must NOT include a ticketing or helpdesk system. Do not create ticket creation, ticket tracking, ticket assignment, ticket queues, ticket statuses, ticket comments, ticket history, ticket dashboards or any ticket-related module.**
+
+The application should focus exclusively on IT asset management, IT inventory, employees, equipment assignment, maintenance, network utilities, IT documentation, reports, IT operations and organizational IT management.
+
+Do not build a static UI mockup. Build an actual application with functional buttons, database persistence, real workflows, validation, navigation and professional design.
+
+---
+
+# 1. PRODUCT VISION
+
+FixDesk helps organizations manage their IT infrastructure and operational activities.
+
+The system should manage:
+
+- IT assets.
+- Hardware inventory.
+- IT equipment assignments.
+- Employee IT equipment.
+- Departments and locations.
+- IT maintenance.
+- Preventive maintenance.
+- Repair history.
+- Spare parts.
+- Inventory transactions.
+- IT documentation.
+- Network utilities.
+- Warranty tracking.
+- IT reports.
+- Equipment lifecycle.
+- IT operational records.
+
+### Target users
+
+- IT Administrators.
+- IT Support Technicians.
+- System Administrators.
+- IT Managers.
+- Inventory Managers.
+- Organization Administrators.
+- Employees with permitted access.
+
+### Product principles
+
+- Professional.
+- Modern.
+- Secure.
+- Offline-capable.
+- Easy to use.
+- Responsive.
+- Reliable.
+- Scalable.
+- Clean architecture.
+- Real functionality.
+- Consistent desktop and web experience.
+
+---
+
+# 2. TECHNOLOGY STACK
+
+### Frontend
+
+- React.
+- TypeScript.
+- Vite.
+- Tailwind CSS.
+- shadcn/ui.
+- Lucide icons.
+- React Router.
+- TanStack Query.
+- Zustand.
+- React Hook Form.
+- Zod.
+- Recharts.
+
+### Backend
+
+- Node.js.
+- TypeScript.
+- Fastify.
+- REST API.
+- Prisma ORM.
+- PostgreSQL for the web application.
+- Authentication and authorization middleware.
+- Structured logging.
+
+### Desktop application
+
+- Tauri 2.
+- React.
+- TypeScript.
+- SQLite.
+- Secure native integrations.
+- Offline-first architecture.
+- Windows installer.
+
+### Web application
+
+- Modern browser support.
+- Responsive UI.
+- Multi-user access.
+- Secure backend.
+- Organization-based data separation.
+- Cloud deployment support.
+
+### Architecture
+
+Use a shared codebase wherever practical.
+
+Separate:
+
+- Shared UI.
+- Shared business logic.
+- Shared validation.
+- Shared types.
+- Desktop database adapter.
+- Web API adapter.
+- Authentication.
+- Permissions.
+- Reporting.
+- Synchronization.
+- Local persistence.
+
+Do not expose database credentials or sensitive backend logic in the frontend.
+
+Do not let the frontend directly access PostgreSQL.
+
+---
+
+# 3. UI/UX DESIGN
+
+Create a professional enterprise-grade interface.
+
+### Design style
+
+- Modern SaaS dashboard.
+- Professional IT management software.
+- Clean typography.
+- Structured layouts.
+- Consistent spacing.
+- Subtle shadows.
+- Rounded corners.
+- Minimal visual clutter.
+- Responsive design.
+- Accessible contrast.
+- Smooth transitions.
+- Professional icons.
+
+### Color direction
+
+- Primary: Dark navy or deep blue.
+- Secondary: Slate.
+- Accent: Blue or cyan.
+- Success: Green.
+- Warning: Amber.
+- Critical: Red.
+- Light background: Soft neutral.
+- Dark mode: Professional dark slate.
+
+Support:
+
+- Light mode.
+- Dark mode.
+- System theme.
+
+Avoid unnecessary gradients, animations and oversized cards.
+
+### Layout
+
+Create:
+
+- Collapsible sidebar.
+- Top navigation.
+- Search.
+- Notifications.
+- User profile.
+- Organization selector where applicable.
+- Main content.
+- Responsive mobile navigation.
+
+### Main navigation
+
+1. Dashboard.
+2. Assets.
+3. Asset Assignments.
+4. Inventory.
+5. Employees.
+6. Departments.
+7. Locations.
+8. Maintenance.
+9. Knowledge Base.
+10. Network Tools.
+11. Reports.
+12. Activity Log.
+13. Settings.
+
+All navigation must be functional.
+
+---
+
+# 4. AUTHENTICATION AND USER MANAGEMENT
+
+Implement a complete authentication system.
+
+Features:
+
+- Login.
+- Logout.
+- Password reset.
+- Change password.
+- Secure session management.
+- Remember session.
+- User profile.
+- Avatar.
+- Account settings.
+- Account status.
+- Password strength validation.
+
+### Roles
+
+#### Super Administrator
+
+- Manage organizations.
+- Manage global configurations.
+- Manage system-level settings.
+
+#### Organization Administrator
+
+- Manage users.
+- Manage departments.
+- Manage assets.
+- Manage inventory.
+- Manage maintenance.
+- Manage organizational settings.
+- View reports.
+
+#### IT Manager
+
+- Manage IT assets.
+- Manage equipment assignments.
+- Manage inventory.
+- Manage maintenance.
+- Manage technicians.
+- View reports.
+
+#### IT Technician
+
+- Manage assigned assets.
+- Perform maintenance.
+- Update asset records.
+- Manage equipment.
+- Access knowledge base.
+- Use network tools.
+
+#### Inventory Manager
+
+- Manage inventory.
+- Manage stock.
+- Manage stock transactions.
+- Manage suppliers.
+- View inventory reports.
+
+#### Employee
+
+- View their assigned equipment.
+- View permitted organizational IT information.
+- Access employee-accessible documentation.
+
+Permissions must be enforced at the backend level.
+
+---
+
+# 5. DASHBOARD
+
+Create a functional IT operations dashboard.
+
+### Summary cards
+
+Display:
+
+- Total IT Assets.
+- Assigned Assets.
+- Available Assets.
+- Assets Under Repair.
+- Retired Assets.
+- Total Employees.
+- Active Departments.
+- Total Inventory Items.
+- Low-Stock Items.
+- Upcoming Maintenance.
+- Overdue Maintenance.
+- Warranty Expiration Alerts.
+
+All dashboard figures must be calculated from actual database data.
+
+### Charts
+
+Create:
+
+- Assets by Category.
+- Assets by Status.
+- Assets by Department.
+- Assets by Location.
+- Assets by Condition.
+- Inventory Stock Levels.
+- Maintenance Activities.
+- Equipment Acquisition Over Time.
+- Asset Assignment Statistics.
+
+### Dashboard widgets
+
+- Recent asset registrations.
+- Recent assignments.
+- Recent returns.
+- Upcoming maintenance.
+- Overdue maintenance.
+- Warranty expiration.
+- Low-stock inventory.
+- Recent activities.
+- Asset lifecycle overview.
+
+### Quick actions
+
+- Register Asset.
+- Assign Asset.
+- Return Asset.
+- Add Employee.
+- Add Inventory.
+- Record Maintenance.
+- Schedule Maintenance.
+- Generate Report.
+
+All quick actions must be functional.
+
+### Dashboard filters
+
+- Today.
+- This Week.
+- This Month.
+- This Year.
+- Custom Date Range.
+
+---
+
+# 6. IT ASSET MANAGEMENT
+
+Build a comprehensive IT asset management module.
+
+### Asset categories
+
+- Laptop.
+- Desktop.
+- Monitor.
+- Printer.
+- Scanner.
+- Router.
+- Switch.
+- Access Point.
+- Server.
+- UPS.
+- Projector.
+- Mobile Phone.
+- Tablet.
+- Keyboard.
+- Mouse.
+- Headset.
+- Accessories.
+- Other.
+
+Categories must be configurable.
+
+### Asset registration
+
+Fields:
+
+- Asset ID.
+- Asset Tag.
+- Asset Name.
+- Category.
+- Manufacturer.
+- Model.
+- Serial Number.
+- Processor.
+- RAM.
+- Storage.
+- Operating System.
+- OS Version.
+- MAC Address.
+- IP Address.
+- Hostname.
+- Purchase Date.
+- Purchase Price.
+- Currency.
+- Vendor.
+- Warranty Start.
+- Warranty End.
+- Condition.
+- Status.
+- Location.
+- Department.
+- Assigned Employee.
+- Assigned Technician.
+- Notes.
+- Attachments.
+- QR Code.
+
+Use category-specific fields where appropriate.
+
+### Asset status
+
+- Available.
+- Assigned.
+- In Repair.
+- Under Maintenance.
+- Retired.
+- Lost.
+- Damaged.
+- Disposed.
+
+### Asset details page
+
+Display:
+
+- Asset information.
+- Technical specifications.
+- Assignment status.
+- Current assigned employee.
+- Assignment history.
+- Maintenance history.
+- Warranty information.
+- Purchase information.
+- Attachments.
+- QR code.
+- Activity timeline.
+
+### Asset assignment
+
+Implement complete assignment workflows.
+
+Allow:
+
+- Assign asset to employee.
+- Assign asset to department.
+- Assign asset to location.
+- Transfer asset.
+- Return asset.
+- Record condition.
+- Record assignment date.
+- Record return date.
+- Record accessories.
+- Record handover notes.
+- Record handover acknowledgement where appropriate.
+
+Generate printable asset handover documents.
+
+### Asset tracking
+
+Search by:
+
+- Asset tag.
+- Serial number.
+- Employee.
+- Department.
+- Category.
+- Hostname.
+- IP address.
+- Location.
+- Manufacturer.
+- Model.
+
+### Asset warranty
+
+Implement:
+
+- Warranty expiration alerts.
+- Warranty status.
+- Warranty filtering.
+- Warranty reports.
+
+### Asset lifecycle
+
+Track:
+
+- Acquisition.
+- Registration.
+- Assignment.
+- Transfer.
+- Maintenance.
+- Repair.
+- Reassignment.
+- Retirement.
+- Disposal.
+
+Maintain complete lifecycle history.
+
+### QR code
+
+Generate unique QR codes for assets.
+
+Allow:
+
+- QR label generation.
+- QR label printing.
+- Export QR images.
+- Asset identification through scanning.
+- QR code linking to the asset details page.
+
+---
+
+# 7. ASSET ASSIGNMENT MANAGEMENT
+
+Create a dedicated asset assignment module.
+
+### Assignment overview
+
+Display:
+
+- Total Assigned Equipment.
+- Recently Assigned.
+- Recently Returned.
+- Pending Return.
+- Employee Equipment.
+
+### Assignment workflow
+
+1. Select an employee.
+2. Select available assets.
+3. Record asset condition.
+4. Record accessories.
+5. Record assignment date.
+6. Record handover notes.
+7. Generate handover form.
+8. Confirm assignment.
+
+### Return workflow
+
+1. Select the employee.
+2. Select assigned asset.
+3. Record return date.
+4. Inspect equipment condition.
+5. Record missing accessories.
+6. Record return notes.
+7. Update asset status.
+8. Complete the return.
+
+### Transfer workflow
+
+Allow transfer between:
+
+- Employees.
+- Departments.
+- Locations.
+
+Maintain a complete transfer history.
+
+---
+
+# 8. INVENTORY AND SPARE PARTS
+
+Build a separate inventory management module for IT supplies and spare parts.
+
+### Inventory categories
+
+- Cables.
+- Adapters.
+- RAM.
+- SSDs.
+- HDDs.
+- Chargers.
+- Keyboards.
+- Mice.
+- Toner.
+- Printer cartridges.
+- Network components.
+- Tools.
+- Other spare parts.
+
+### Inventory fields
+
+- Item ID.
+- Item Name.
+- Category.
+- Manufacturer.
+- Description.
+- Quantity.
+- Minimum Stock.
+- Maximum Stock.
+- Unit.
+- Location.
+- Unit Price.
+- Supplier.
+- Stock Status.
+
+### Inventory operations
+
+- Add stock.
+- Issue items.
+- Return items.
+- Transfer stock.
+- Adjust stock.
+- Record stock movement.
+- Track inventory history.
+- Record responsible user.
+
+### Stock alerts
+
+- Low stock.
+- Out of stock.
+- Overstock.
+
+### Inventory reports
+
+- Current stock.
+- Low-stock inventory.
+- Stock movement.
+- Items issued.
+- Inventory valuation.
+- Inventory by location.
+
+Do not allow negative stock without an authorized adjustment process.
+
+---
+
+# 9. EMPLOYEE MANAGEMENT
+
+Build a complete employee directory.
+
+### Employee fields
+
+- Employee ID.
+- Full Name.
+- Email.
+- Phone.
+- Department.
+- Position.
+- Office Location.
+- Manager.
+- Employee Status.
+- Profile Picture.
+- Start Date.
+- Notes.
+
+### Employee details
+
+Display:
+
+- Employee profile.
+- Assigned assets.
+- Asset history.
+- Department.
+- Location.
+- Equipment assignment history.
+- Equipment return history.
+
+### Employee lifecycle
+
+Support:
+
+- Add employee.
+- Edit employee.
+- Deactivate employee.
+- Reactivate employee.
+- Transfer employee.
+- Employee exit checklist.
+- Equipment return checklist.
+
+Do not automatically delete employee records or their asset history when an employee is deactivated.
+
+---
+
+# 10. DEPARTMENTS AND LOCATIONS
+
+Create management tools for:
+
+- Departments.
+- Teams.
+- Offices.
+- Buildings.
+- Locations.
+
+Allow organizations to customize their structure.
+
+Examples:
+
+- Finance.
+- HR.
+- Programs.
+- Procurement.
+- Operations.
+- IT.
+
+Associate:
+
+- Employees.
+- Assets.
+- Inventory.
+- Maintenance records.
+
+---
+
+# 11. MAINTENANCE MANAGEMENT
+
+Build a complete preventive and corrective maintenance module.
+
+### Maintenance types
+
+- Preventive Maintenance.
+- Corrective Maintenance.
+- Hardware Repair.
+- Software Maintenance.
+- Network Maintenance.
+- Inspection.
+- Cleaning.
+- Upgrade.
+- Other.
+
+### Maintenance records
+
+Fields:
+
+- Maintenance ID.
+- Asset.
+- Maintenance Type.
+- Technician.
+- Start Date.
+- Completion Date.
+- Status.
+- Description.
+- Issue.
+- Work Performed.
+- Parts Used.
+- Cost.
+- Currency.
+- Notes.
+- Attachments.
+
+### Maintenance scheduling
+
+Support:
+
+- One-time maintenance.
+- Recurring maintenance.
+- Monthly maintenance.
+- Quarterly maintenance.
+- Annual maintenance.
+- Custom intervals.
+
+### Maintenance dashboard
+
+Display:
+
+- Upcoming Maintenance.
+- Overdue Maintenance.
+- Completed Maintenance.
+- Assets Under Repair.
+- Maintenance Costs.
+- Maintenance by Technician.
+
+### Maintenance history
+
+Maintain a complete maintenance history for each asset.
+
+### Maintenance workflow
+
+- Scheduled.
+- In Progress.
+- Pending Parts.
+- Completed.
+- Cancelled.
+
+Allow technicians to update maintenance progress.
+
+---
+
+# 12. KNOWLEDGE BASE
+
+Build an internal IT knowledge base.
+
+### Categories
+
+- Windows.
+- Networking.
+- Hardware.
+- Software.
+- Cybersecurity.
+- Printers.
+- Email.
+- Microsoft Office.
+- Troubleshooting.
+- Procedures.
+- IT Policies.
+
+### Features
+
+- Create articles.
+- Edit articles.
+- Delete articles with permission.
+- Publish.
+- Unpublish.
+- Drafts.
+- Tags.
+- Categories.
+- Search.
+- Attachments.
+- Author.
+- Last Updated.
+
+### Article editor
+
+Support:
+
+- Headings.
+- Text.
+- Lists.
+- Images.
+- Links.
+- Code snippets.
+- Step-by-step instructions.
+
+### Access control
+
+Support:
+
+- IT-only articles.
+- Employee-accessible articles.
+- Restricted articles.
+
+---
+
+# 13. NETWORK TOOLS
+
+Create a Network Tools module for IT technicians.
+
+### Network information
+
+- IP Address.
+- Subnet Mask.
+- Gateway.
+- DNS.
+- DHCP.
+- MAC Address.
+
+### Network utilities
+
+- Ping.
+- DNS Lookup.
+- IP Information.
+- Subnet Calculator.
+- Connectivity Checklist.
+- Network Troubleshooting Guides.
+
+For the desktop version, use safe native integrations when necessary.
+
+For the web version, clearly explain browser restrictions and use appropriate server-side functionality where authorized.
+
+Never claim an operation succeeded if it has not actually executed.
+
+### Subnet calculator
+
+Implement:
+
+- IPv4 address.
+- CIDR.
+- Subnet Mask.
+- Network Address.
+- Broadcast Address.
+- Usable Host Range.
+- Number of Usable Hosts.
+
+Validate inputs.
+
+### Troubleshooting guides
+
+Include structured troubleshooting procedures for:
+
+- Internet Connectivity.
+- DNS.
+- Wi-Fi.
+- LAN.
+- DHCP.
+- Printer Connectivity.
+- Windows Networking.
+- Network Device Troubleshooting.
+
+---
+
+# 14. REPORTS AND ANALYTICS
+
+Build a comprehensive reporting module using real database data.
+
+### Asset reports
+
+- Assets by Category.
+- Assets by Status.
+- Assets by Department.
+- Assets by Employee.
+- Assets by Location.
+- Warranty Expiration.
+- Assets Under Repair.
+- Asset Acquisition History.
+- Asset Lifecycle.
+- Asset Assignment History.
+
+### Inventory reports
+
+- Current Inventory.
+- Low Stock.
+- Out of Stock.
+- Stock Movement.
+- Inventory Issuance.
+- Inventory Valuation.
+- Inventory by Location.
+
+### Maintenance reports
+
+- Maintenance Schedule.
+- Maintenance History.
+- Repair Costs.
+- Maintenance by Asset.
+- Maintenance by Technician.
+- Overdue Maintenance.
+- Preventive Maintenance Summary.
+
+### Employee reports
+
+- Employees with Assigned Equipment.
+- Equipment by Employee.
+- Equipment by Department.
+- Equipment Return Status.
+
+### Monthly IT operational report
+
+Generate a comprehensive monthly IT report containing:
+
+- IT asset overview.
+- Newly registered assets.
+- Asset assignments.
+- Asset returns.
+- Equipment transfers.
+- Equipment repairs.
+- Preventive maintenance.
+- Corrective maintenance.
+- Maintenance costs.
+- Inventory activities.
+- Low-stock items.
+- Warranty alerts.
+- IT operational activities.
+- Major IT challenges.
+- Recommendations.
+
+### Export
+
+Support:
+
+- PDF.
+- CSV.
+- Excel where appropriate.
+- Printable reports.
+
+Allow filters by:
+
+- Date.
+- Department.
+- Category.
+- Technician.
+- Location.
+- Status.
+
+Reports must be based on real data.
+
+---
+
+# 15. NOTIFICATIONS
+
+Create an in-app notification system.
+
+Notifications for:
+
+- Asset warranty expiration.
+- Upcoming maintenance.
+- Overdue maintenance.
+- Low inventory.
+- Out of stock.
+- Asset assignment.
+- Asset return.
+- Employee equipment changes.
+- Maintenance updates.
+
+Features:
+
+- Notification center.
+- Read/unread status.
+- Timestamps.
+- Notification preferences.
+- Clear notifications.
+
+Optional email notifications can be configured.
+
+---
+
+# 16. ACTIVITY LOG
+
+Create an audit log for important system operations.
+
+Track:
+
+- User.
+- Action.
+- Entity.
+- Entity ID.
+- Timestamp.
+- Previous value where appropriate.
+- New value where appropriate.
+
+Examples:
+
+- Asset registered.
+- Asset updated.
+- Asset assigned.
+- Asset returned.
+- Asset transferred.
+- Maintenance scheduled.
+- Maintenance completed.
+- Inventory adjusted.
+- Employee created.
+- User created.
+- Permission changed.
+
+Protect activity logs against unauthorized modification or deletion.
+
+---
+
+# 17. FILE ATTACHMENTS
+
+Support attachments for:
+
+- Assets.
+- Employees where appropriate.
+- Maintenance.
+- Knowledge base.
+- Inventory.
+
+Implement:
+
+- File size limits.
+- File type validation.
+- Secure storage.
+- Previews where supported.
+- Download permissions.
+- Safe file handling.
+
+Do not allow executable files by default.
+
+---
+
+# 18. SETTINGS
+
+Create comprehensive settings.
+
+### Organization settings
+
+- Organization Name.
+- Logo.
+- Address.
+- Phone.
+- Email.
+- Website.
+- Timezone.
+- Currency.
+- Date Format.
+
+### System settings
+
+- Asset Categories.
+- Inventory Categories.
+- Maintenance Types.
+- Departments.
+- Locations.
+- Roles.
+- Permissions.
+- Notification Settings.
+- Warranty Alert Settings.
+- Maintenance Settings.
+
+### Appearance
+
+- Light Mode.
+- Dark Mode.
+- System Theme.
+- Sidebar Preferences.
+
+### Backup and restore
+
+Desktop:
+
+- Create local database backup.
+- Restore backup.
+- Export data.
+- Import data.
+- Validate backups.
+- Warn before replacing existing data.
+
+Web:
+
+- Secure server-side backup.
+- Administrator-managed exports.
+- Recovery procedures.
+
+Never silently overwrite data during restoration.
+
+---
+
+# 19. OFFLINE WINDOWS DESKTOP APPLICATION
+
+Offline functionality is a core requirement.
+
+The Windows application must function without an internet connection.
+
+### Offline functionality
+
+Allow:
+
+- Asset registration.
+- Asset management.
+- Asset assignment.
+- Asset return.
+- Employee management.
+- Inventory management.
+- Maintenance.
+- Knowledge base.
+- Network utilities where supported.
+- Reports.
+- Backup and restore.
+
+### Desktop database
+
+Use SQLite.
+
+Implement:
+
+- Database schema.
+- Migration system.
+- Database integrity checks.
+- Transactions.
+- Local persistence.
+- Backup.
+- Restore.
+
+Data must remain intact when the application is closed, restarted or updated.
+
+### Synchronization architecture
+
+Prepare synchronization for future online deployment.
+
+When connected:
+
+- Synchronize local changes.
+- Download remote changes.
+- Detect conflicts.
+- Prevent duplicates.
+- Track synchronization state.
+- Preserve local data.
+- Log synchronization errors.
+
+If synchronization is not fully implemented in the initial release, clearly document the limitations and do not pretend that synchronization is functional.
+
+---
+
+# 20. WEB APPLICATION
+
+The web version must support:
+
+- Multi-user access.
+- Secure authentication.
+- Role-based permissions.
+- Organization isolation.
+- Database persistence.
+- Responsive UI.
+- Assets.
+- Asset assignments.
+- Inventory.
+- Employees.
+- Departments.
+- Locations.
+- Maintenance.
+- Knowledge base.
+- Network tools.
+- Reports.
+- Notifications.
+- Audit logs.
+
+### Organization isolation
+
+Design the system for multi-tenant organizations.
+
+Every organization-owned record must be scoped appropriately.
+
+Users must not be able to access another organization's data.
+
+Enforce organization isolation through backend queries and authorization.
+
+---
+
+# 21. DATABASE DESIGN
+
+Create a proper relational database.
+
+Include models for:
+
+- Organizations.
+- Users.
+- Roles.
+- Permissions.
+- Departments.
+- Locations.
+- Employees.
+- Assets.
+- Asset Categories.
+- Asset Assignments.
+- Asset Transfer History.
+- Maintenance Records.
+- Maintenance Schedules.
+- Inventory Items.
+- Inventory Transactions.
+- Vendors.
+- Knowledge Articles.
+- Knowledge Categories.
+- Notifications.
+- Activity Logs.
+- Settings.
+- Backup Metadata.
+- Synchronization Metadata.
+
+Use:
+
+- Foreign keys.
+- Proper indexes.
+- Unique constraints.
+- Validation.
+- Transactions.
+- Soft deletion where appropriate.
+- Timestamps.
+
+Create database migrations.
+
+Do not create ticket-related database tables, ticket models or ticket functionality.
+
+---
+
+# 22. SECURITY REQUIREMENTS
+
+Implement:
+
+- Secure authentication.
+- Password hashing.
+- Role-based access control.
+- Input validation.
+- SQL injection protection.
+- XSS protection.
+- CSRF protection where applicable.
+- Secure file handling.
+- API authorization.
+- Organization isolation.
+- Session security.
+- Rate limiting.
+- Security headers.
+- Audit logging.
+- Secrets management.
+- Error handling.
+- Secure desktop IPC.
+- Restricted desktop permissions.
+- Dependency security.
+
+Never store plain-text passwords.
+
+Never hardcode production secrets.
+
+Never expose sensitive configuration in frontend source code.
+
+Never trust frontend permissions alone.
+
+---
+
+# 23. UI/UX REQUIREMENTS
+
+Create professional, polished, functional screens for:
+
+- Login.
+- Dashboard.
+- Assets.
+- Asset Registration.
+- Asset Details.
+- Asset Assignments.
+- Asset Returns.
+- Asset Transfers.
+- Inventory.
+- Inventory Details.
+- Employees.
+- Employee Details.
+- Departments.
+- Locations.
+- Maintenance.
+- Maintenance Scheduling.
+- Maintenance Details.
+- Knowledge Base.
+- Network Tools.
+- Reports.
+- Notifications.
+- Activity Log.
+- Settings.
+- User Management.
+
+### Tables
+
+Support:
+
+- Search.
+- Sorting.
+- Filtering.
+- Pagination.
+- Responsive layout.
+- Empty states.
+- Loading states.
+- Error states.
+
+### Forms
+
+Support:
+
+- Validation.
+- Clear error messages.
+- Required fields.
+- Confirmation where appropriate.
+- Save.
+- Cancel.
+- Edit.
+- Delete with confirmation.
+- Loading indicators.
+
+### UI quality
+
+Avoid:
+
+- Placeholder buttons.
+- Fake statistics.
+- Hardcoded data.
+- Empty navigation pages.
+- Broken dropdowns.
+- Inconsistent design.
+- Unnecessary popups.
+- Excessive animation.
+
+---
+
+# 24. PROJECT STRUCTURE
+
+Suggested structure:
+
+fixdesk/
+├── apps/
+│   ├── web/
+│   ├── desktop/
+│   └── api/
+├── packages/
+│   ├── ui/
+│   ├── shared/
+│   ├── validation/
+│   ├── types/
+│   └── business-logic/
+├── database/
+│   ├── migrations/
+│   └── seed/
+├── docs/
+│   ├── architecture/
+│   ├── setup/
+│   └── api/
+├── scripts/
+├── tests/
+├── README.md
+└── package.json
+
+Adapt the structure if necessary.
+
+---
+
+# 25. TESTING
+
+Implement automated testing.
+
+### Unit tests
+
+Test:
+
+- Validation.
+- Permissions.
+- Asset assignment.
+- Asset return.
+- Asset transfer.
+- Inventory transactions.
+- Maintenance calculations.
+- Subnet calculations.
+- Synchronization logic.
+
+### Integration tests
+
+Test:
+
+- API.
+- Authentication.
+- Database operations.
+- Asset registration.
+- Asset assignment.
+- Asset return.
+- Inventory.
+- Maintenance.
+- Organization isolation.
+
+### UI tests
+
+Test:
+
+- Login.
+- Dashboard.
+- Asset registration.
+- Asset assignment.
+- Asset return.
+- Inventory operations.
+- Maintenance.
+- Report generation.
+
+### Security testing
+
+Verify:
+
+- Unauthorized access.
+- Cross-organization access.
+- Permission violations.
+- Invalid inputs.
+- File upload restrictions.
+
+Do not claim tests passed unless they were actually executed.
+
+---
+
+# 26. DEVELOPMENT PHASES
+
+Develop progressively.
+
+## Phase 1 — Foundation
+
+- Project setup.
+- Architecture.
+- Design system.
+- Navigation.
+- Authentication.
+- Database.
+- User roles.
+- Organization structure.
+- Settings.
+
+## Phase 2 — IT Asset Management
+
+- Asset registration.
+- Asset list.
+- Asset details.
+- Asset categories.
+- Asset specifications.
+- Asset status.
+- Asset lifecycle.
+- QR codes.
+- Warranty tracking.
+
+## Phase 3 — Asset Assignment
+
+- Assign assets.
+- Return assets.
+- Transfer assets.
+- Assignment history.
+- Employee equipment.
+- Handover forms.
+- Return checklists.
+
+## Phase 4 — Inventory
+
+- Inventory registration.
+- Stock management.
+- Stock transactions.
+- Low-stock alerts.
+- Inventory reporting.
+
+## Phase 5 — Employees and Departments
+
+- Employee management.
+- Department management.
+- Locations.
+- Employee lifecycle.
+- Equipment assignments.
+
+## Phase 6 — Maintenance
+
+- Maintenance records.
+- Scheduling.
+- Recurring maintenance.
+- Repair tracking.
+- Maintenance reporting.
+
+## Phase 7 — Knowledge Base and Network Tools
+
+- Knowledge articles.
+- Search.
+- Subnet calculator.
+- Network troubleshooting.
+- Desktop network utilities.
+
+## Phase 8 — Reports
+
+- Dashboard analytics.
+- Asset reports.
+- Inventory reports.
+- Maintenance reports.
+- Employee reports.
+- PDF and CSV exports.
+
+## Phase 9 — Desktop Application
+
+- Tauri integration.
+- SQLite.
+- Offline operation.
+- Windows build.
+- Backup.
+- Restore.
+
+## Phase 10 — Web Application
+
+- API integration.
+- PostgreSQL.
+- Authentication.
+- Multi-tenant support.
+- Hosting preparation.
+- Deployment.
+
+## Phase 11 — Synchronization
+
+- Sync engine.
+- Conflict handling.
+- Sync logs.
+- Retry mechanisms.
+- Validation.
+
+## Phase 12 — Quality and Release
+
+- Testing.
+- Security review.
+- Performance optimization.
+- UI polishing.
+- Installer.
+- Documentation.
+- Release checklist.
+
+---
+
+# 27. DEVELOPMENT RULES
+
+1. Inspect the existing project before making changes.
+2. Do not destroy existing functionality without justification.
+3. Maintain a working application throughout development.
+4. Build features incrementally.
+5. Do not generate fake functionality.
+6. Do not leave core features as placeholders.
+7. Use real data persistence.
+8. Implement validation.
+9. Use reusable components.
+10. Keep code modular.
+11. Avoid unnecessary dependencies.
+12. Avoid unnecessary complexity.
+13. Keep the UI consistent.
+14. Test features after implementation.
+15. Fix errors before proceeding.
+16. Maintain documentation.
+17. Explain important architectural decisions.
+18. Do not claim unfinished functionality is completed.
+19. Do not silently remove features.
+20. Do not replace a working application with a mockup.
+21. Use database migrations.
+22. Ensure desktop and web versions share compatible business logic.
+23. Enforce permissions at the backend.
+24. Implement proper loading, error, success and empty states.
+25. Ensure the application can be built and run locally.
+26. Do not create or implement any ticketing or helpdesk features.
+27. Keep the application focused on IT operations and asset management.
+
+---
+
+# 28. FIRST TASK
+
+Begin by planning and implementing Phase 1.
+
+Before writing code:
+
+1. Inspect the project directory.
+2. Identify existing files and technologies.
+3. Determine whether existing functionality must be preserved.
+4. Propose the architecture.
+5. Define the database schema.
+6. Define shared components.
+7. Define the web and desktop integration.
+8. Define the security architecture.
+9. Create the development roadmap.
+10. Create the initial project structure.
+
+Then begin implementing Phase 1.
+
+Do not stop at planning.
+
+Create the files, install dependencies, implement the foundation, run the application, test it and fix errors.
+
+When Phase 1 is complete, provide:
+
+- What was implemented.
+- Project structure.
+- Database schema.
+- Features that work.
+- Tests performed.
+- Remaining issues.
+- How to run the application.
+- Next development phase.
+
+Build FixDesk as a professional, real-world IT Operations and Asset Management product.
+
+**Ticketing and helpdesk functionality must remain completely excluded from the product.**

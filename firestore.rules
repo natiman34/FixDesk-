@@ -1,0 +1,597 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSuperAdmin() {
+      return isVerified() && request.auth.token.email == 'natim0570@gmail.com';
+    }
+
+    function memberPath(orgId, uid) {
+      return /databases/$(database)/documents/organizations/$(orgId)/members/$(uid);
+    }
+
+    function isOrgMember(orgId) {
+      return isVerified() && (
+        isSuperAdmin() ||
+        (exists(memberPath(orgId, request.auth.uid)) &&
+          get(memberPath(orgId, request.auth.uid)).data.status == 'ACTIVE')
+      );
+    }
+
+    function hasOrgRole(orgId, allowedRoles) {
+      return isVerified() && (
+        isSuperAdmin() ||
+        (exists(memberPath(orgId, request.auth.uid)) &&
+          get(memberPath(orgId, request.auth.uid)).data.status == 'ACTIVE' &&
+          get(memberPath(orgId, request.auth.uid)).data.role in allowedRoles)
+      );
+    }
+
+    function isOrgAdmin(orgId) {
+      return hasOrgRole(orgId, ['SUPER_ADMIN', 'ORG_ADMIN']);
+    }
+
+    function isAssetOperator(orgId) {
+      return hasOrgRole(orgId, ['SUPER_ADMIN', 'ORG_ADMIN', 'IT_MANAGER', 'IT_TECHNICIAN']);
+    }
+
+    function isInventoryOperator(orgId) {
+      return hasOrgRole(orgId, ['SUPER_ADMIN', 'ORG_ADMIN', 'IT_MANAGER', 'INVENTORY_MANAGER']);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isOptionalString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isValidTimestampString(val) {
+      return val is string && val.size() >= 10 && val.size() <= 40;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserPrivate(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'activeOrgId', 'updatedAt']) &&
+        data.uid == userId &&
+        isValidString(data.email, 3, 160) &&
+        isValidString(data.displayName, 1, 120) &&
+        isOptionalString(data, 'activeOrgId', 128) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidOrganization(data, orgId) {
+      return data.keys().hasAll(['id', 'name', 'slug', 'ownerUid', 'currency', 'timezone', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'name', 'slug', 'ownerUid', 'email', 'phone', 'website', 'address',
+          'timezone', 'currency', 'dateFormat', 'warrantyAlertDays', 'maintenanceReminderDays',
+          'assetCategories', 'inventoryCategories', 'maintenanceTypes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id == orgId &&
+        isValidString(data.name, 2, 120) &&
+        isValidString(data.slug, 2, 80) &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.currency, 3, 8) &&
+        isValidString(data.timezone, 2, 64) &&
+        isOptionalString(data, 'email', 160) &&
+        isOptionalString(data, 'phone', 40) &&
+        isOptionalString(data, 'website', 200) &&
+        isOptionalString(data, 'address', 300) &&
+        isOptionalString(data, 'dateFormat', 32) &&
+        (!('warrantyAlertDays' in data) || (data.warrantyAlertDays is number && data.warrantyAlertDays >= 1 && data.warrantyAlertDays <= 365)) &&
+        (!('maintenanceReminderDays' in data) || (data.maintenanceReminderDays is number && data.maintenanceReminderDays >= 1 && data.maintenanceReminderDays <= 180)) &&
+        (!('assetCategories' in data) || (data.assetCategories is list && data.assetCategories.size() <= 40)) &&
+        (!('inventoryCategories' in data) || (data.inventoryCategories is list && data.inventoryCategories.size() <= 40)) &&
+        (!('maintenanceTypes' in data) || (data.maintenanceTypes is list && data.maintenanceTypes.size() <= 30)) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidOrgMember(data, orgId, memberUid) {
+      return data.keys().hasAll(['uid', 'orgId', 'displayName', 'role', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'orgId', 'displayName', 'email', 'role', 'status', 'createdAt', 'updatedAt']) &&
+        data.uid == memberUid &&
+        data.orgId == orgId &&
+        isValidString(data.displayName, 1, 120) &&
+        isOptionalString(data, 'email', 160) &&
+        data.role in ['SUPER_ADMIN', 'ORG_ADMIN', 'IT_MANAGER', 'IT_TECHNICIAN', 'INVENTORY_MANAGER', 'EMPLOYEE'] &&
+        data.status in ['ACTIVE', 'SUSPENDED'] &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidDepartment(data, orgId, deptId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'name', 'code', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'name', 'code', 'headName', 'description', 'status', 'createdAt', 'updatedAt']) &&
+        data.id == deptId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.name, 2, 100) &&
+        isValidString(data.code, 1, 24) &&
+        isOptionalString(data, 'headName', 120) &&
+        isOptionalString(data, 'description', 400) &&
+        data.status in ['ACTIVE', 'INACTIVE'] &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidLocation(data, orgId, locId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'name', 'code', 'type', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'name', 'code', 'type', 'address', 'city', 'country', 'createdAt', 'updatedAt']) &&
+        data.id == locId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.name, 2, 120) &&
+        isValidString(data.code, 1, 24) &&
+        data.type in ['HEADQUARTERS', 'BRANCH_OFFICE', 'BUILDING', 'SERVER_ROOM', 'WAREHOUSE', 'FIELD_SITE'] &&
+        isOptionalString(data, 'address', 300) &&
+        isOptionalString(data, 'city', 80) &&
+        isOptionalString(data, 'country', 80) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidEmployee(data, orgId, empId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'employeeCode', 'fullName', 'email', 'departmentId', 'locationId', 'position', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'employeeCode', 'fullName', 'email', 'phone', 'departmentId', 'locationId', 'position', 'managerName', 'status', 'startDate', 'notes', 'createdAt', 'updatedAt']) &&
+        data.id == empId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.employeeCode, 2, 40) &&
+        isValidString(data.fullName, 2, 120) &&
+        isValidString(data.email, 3, 160) &&
+        isOptionalString(data, 'phone', 40) &&
+        isValidId(data.departmentId) &&
+        isValidId(data.locationId) &&
+        isValidString(data.position, 2, 100) &&
+        isOptionalString(data, 'managerName', 120) &&
+        data.status in ['ACTIVE', 'INACTIVE'] &&
+        isOptionalString(data, 'startDate', 32) &&
+        isOptionalString(data, 'notes', 1000) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidAsset(data, orgId, assetId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'assetTag', 'name', 'category', 'manufacturer', 'model', 'serialNumber', 'condition', 'status', 'locationId', 'departmentId', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'orgId', 'ownerUid', 'assetTag', 'name', 'category', 'manufacturer', 'model', 'serialNumber',
+          'processor', 'ram', 'storage', 'operatingSystem', 'osVersion', 'macAddress', 'ipAddress', 'hostname',
+          'purchaseDate', 'purchasePrice', 'currency', 'vendor', 'warrantyStart', 'warrantyEnd',
+          'condition', 'status', 'locationId', 'departmentId', 'assignedEmployeeId', 'assignedTechnicianName',
+          'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id == assetId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.assetTag, 2, 64) &&
+        isValidString(data.name, 2, 140) &&
+        isValidString(data.category, 2, 64) &&
+        isValidString(data.manufacturer, 1, 80) &&
+        isValidString(data.model, 1, 100) &&
+        isValidString(data.serialNumber, 2, 100) &&
+        isOptionalString(data, 'processor', 100) &&
+        isOptionalString(data, 'ram', 40) &&
+        isOptionalString(data, 'storage', 60) &&
+        isOptionalString(data, 'operatingSystem', 80) &&
+        isOptionalString(data, 'osVersion', 60) &&
+        isOptionalString(data, 'macAddress', 32) &&
+        isOptionalString(data, 'ipAddress', 45) &&
+        isOptionalString(data, 'hostname', 100) &&
+        isOptionalString(data, 'purchaseDate', 32) &&
+        (!('purchasePrice' in data) || (data.purchasePrice is number && data.purchasePrice >= 0)) &&
+        isOptionalString(data, 'currency', 8) &&
+        isOptionalString(data, 'vendor', 120) &&
+        isOptionalString(data, 'warrantyStart', 32) &&
+        isOptionalString(data, 'warrantyEnd', 32) &&
+        data.condition in ['EXCELLENT', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'] &&
+        data.status in ['AVAILABLE', 'ASSIGNED', 'IN_REPAIR', 'UNDER_MAINTENANCE', 'RETIRED', 'LOST', 'DAMAGED', 'DISPOSED'] &&
+        isValidId(data.locationId) &&
+        isValidId(data.departmentId) &&
+        isOptionalString(data, 'assignedEmployeeId', 128) &&
+        isOptionalString(data, 'assignedTechnicianName', 120) &&
+        isOptionalString(data, 'notes', 1500) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidAssignment(data, orgId, assignmentId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'assetId', 'employeeId', 'actionType', 'status', 'assignedDate', 'performedBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'orgId', 'ownerUid', 'assetId', 'employeeId', 'departmentId', 'locationId',
+          'actionType', 'status', 'conditionAtHandover', 'conditionAtReturn',
+          'accessories', 'missingAccessories', 'assignedDate', 'returnDate',
+          'notes', 'acknowledged', 'performedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id == assignmentId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidId(data.assetId) &&
+        isValidId(data.employeeId) &&
+        isOptionalString(data, 'departmentId', 128) &&
+        isOptionalString(data, 'locationId', 128) &&
+        data.actionType in ['ASSIGN', 'RETURN', 'TRANSFER'] &&
+        data.status in ['ACTIVE', 'RETURNED', 'TRANSFERRED'] &&
+        isOptionalString(data, 'conditionAtHandover', 32) &&
+        isOptionalString(data, 'conditionAtReturn', 32) &&
+        isOptionalString(data, 'accessories', 400) &&
+        isOptionalString(data, 'missingAccessories', 400) &&
+        isValidString(data.assignedDate, 8, 32) &&
+        isOptionalString(data, 'returnDate', 32) &&
+        isOptionalString(data, 'notes', 1000) &&
+        (!('acknowledged' in data) || data.acknowledged is bool) &&
+        isValidString(data.performedBy, 1, 120) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidInventoryItem(data, orgId, itemId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'sku', 'name', 'category', 'quantity', 'minStock', 'maxStock', 'unit', 'locationId', 'unitPrice', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'sku', 'name', 'category', 'manufacturer', 'description', 'quantity', 'minStock', 'maxStock', 'unit', 'locationId', 'unitPrice', 'currency', 'supplier', 'createdAt', 'updatedAt']) &&
+        data.id == itemId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.sku, 2, 64) &&
+        isValidString(data.name, 2, 140) &&
+        isValidString(data.category, 2, 64) &&
+        isOptionalString(data, 'manufacturer', 80) &&
+        isOptionalString(data, 'description', 600) &&
+        data.quantity is number && data.quantity >= 0 &&
+        data.minStock is number && data.minStock >= 0 &&
+        data.maxStock is number && data.maxStock >= data.minStock &&
+        isValidString(data.unit, 1, 32) &&
+        isValidId(data.locationId) &&
+        data.unitPrice is number && data.unitPrice >= 0 &&
+        isOptionalString(data, 'currency', 8) &&
+        isOptionalString(data, 'supplier', 120) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidInventoryTransaction(data, orgId, txId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'itemId', 'type', 'quantityDelta', 'resultingQuantity', 'performedBy', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'itemId', 'type', 'quantityDelta', 'resultingQuantity', 'reference', 'notes', 'performedBy', 'createdAt']) &&
+        data.id == txId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidId(data.itemId) &&
+        data.type in ['ADD', 'ISSUE', 'RETURN', 'TRANSFER', 'ADJUST'] &&
+        data.quantityDelta is number &&
+        data.resultingQuantity is number && data.resultingQuantity >= 0 &&
+        isOptionalString(data, 'reference', 160) &&
+        isOptionalString(data, 'notes', 500) &&
+        isValidString(data.performedBy, 1, 120) &&
+        isValidTimestampString(data.createdAt);
+    }
+
+    function isValidMaintenance(data, orgId, recordId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'assetId', 'maintenanceType', 'technicianName', 'scheduledDate', 'recurrence', 'status', 'description', 'cost', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'orgId', 'ownerUid', 'assetId', 'maintenanceType', 'technicianName',
+          'scheduledDate', 'completionDate', 'recurrence', 'customIntervalDays',
+          'status', 'description', 'issue', 'workPerformed', 'partsUsed',
+          'cost', 'currency', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id == recordId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidId(data.assetId) &&
+        isValidString(data.maintenanceType, 2, 64) &&
+        isValidString(data.technicianName, 2, 120) &&
+        isValidString(data.scheduledDate, 8, 32) &&
+        isOptionalString(data, 'completionDate', 32) &&
+        data.recurrence in ['NONE', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'CUSTOM'] &&
+        (!('customIntervalDays' in data) || (data.customIntervalDays is number && data.customIntervalDays >= 1 && data.customIntervalDays <= 1095)) &&
+        data.status in ['SCHEDULED', 'IN_PROGRESS', 'PENDING_PARTS', 'COMPLETED', 'CANCELLED'] &&
+        isValidString(data.description, 2, 800) &&
+        isOptionalString(data, 'issue', 800) &&
+        isOptionalString(data, 'workPerformed', 1500) &&
+        isOptionalString(data, 'partsUsed', 400) &&
+        data.cost is number && data.cost >= 0 &&
+        isOptionalString(data, 'currency', 8) &&
+        isOptionalString(data, 'notes', 1000) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidArticle(data, orgId, articleId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'title', 'category', 'accessLevel', 'status', 'content', 'authorName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'title', 'category', 'accessLevel', 'status', 'summary', 'content', 'tags', 'authorName', 'createdAt', 'updatedAt']) &&
+        data.id == articleId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        isValidString(data.title, 3, 160) &&
+        isValidString(data.category, 2, 64) &&
+        data.accessLevel in ['IT_ONLY', 'EMPLOYEE_ACCESSIBLE', 'RESTRICTED'] &&
+        data.status in ['DRAFT', 'PUBLISHED'] &&
+        isOptionalString(data, 'summary', 400) &&
+        isValidString(data.content, 5, 20000) &&
+        (!('tags' in data) || (data.tags is list && data.tags.size() <= 10 && (data.tags.size() == 0 || data.tags[0] is string))) &&
+        isValidString(data.authorName, 1, 120) &&
+        isValidTimestampString(data.createdAt) &&
+        isValidTimestampString(data.updatedAt);
+    }
+
+    function isValidActivityLog(data, orgId, logId) {
+      return data.keys().hasAll(['id', 'orgId', 'ownerUid', 'actorUid', 'actorName', 'action', 'entityType', 'entityId', 'summary', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'orgId', 'ownerUid', 'actorUid', 'actorName', 'action', 'entityType', 'entityId', 'summary', 'previousValue', 'newValue', 'createdAt']) &&
+        data.id == logId &&
+        data.orgId == orgId &&
+        isValidString(data.ownerUid, 1, 128) &&
+        data.actorUid == request.auth.uid &&
+        isValidString(data.actorName, 1, 120) &&
+        isValidString(data.action, 2, 80) &&
+        isValidString(data.entityType, 2, 64) &&
+        isValidString(data.entityId, 1, 128) &&
+        isValidString(data.summary, 2, 400) &&
+        isOptionalString(data, 'previousValue', 600) &&
+        isOptionalString(data, 'newValue', 600) &&
+        isValidTimestampString(data.createdAt);
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (request.auth.uid == userId || isSuperAdmin());
+      allow list: if false;
+      allow create: if isVerified() && isValidId(userId) && request.auth.uid == userId && isValidUserPrivate(incoming(), userId);
+      allow update: if isVerified() && isValidId(userId) && isValidUserPrivate(incoming(), userId) && (
+        isSuperAdmin() ||
+        (request.auth.uid == userId && incoming().uid == existing().uid &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'activeOrgId', 'updatedAt']))
+      );
+      allow delete: if false;
+    }
+
+    match /organizations/{orgId} {
+      allow get: if isVerified() && isValidId(orgId) && (existing().ownerUid == request.auth.uid || isOrgMember(orgId));
+      allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+      allow create: if isVerified() && isValidId(orgId) && isValidOrganization(incoming(), orgId) &&
+        incoming().ownerUid == request.auth.uid;
+      allow update: if isVerified() && isValidId(orgId) && isValidOrganization(incoming(), orgId) &&
+        incoming().id == existing().id &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt && (
+          isSuperAdmin() ||
+          (isOrgAdmin(orgId) && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'email', 'phone', 'website', 'address', 'timezone', 'currency',
+            'dateFormat', 'warrantyAlertDays', 'maintenanceReminderDays',
+            'assetCategories', 'inventoryCategories', 'maintenanceTypes', 'updatedAt'
+          ]))
+        );
+      allow delete: if isSuperAdmin();
+
+      match /members/{memberUid} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(memberUid) && (request.auth.uid == memberUid || isOrgMember(orgId));
+        allow list: if isVerified() && (resource.data.uid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(memberUid) && isValidOrgMember(incoming(), orgId, memberUid) && (
+          isOrgAdmin(orgId) ||
+          (request.auth.uid == memberUid &&
+            exists(/databases/$(database)/documents/organizations/$(orgId)) &&
+            get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid &&
+            incoming().role == 'ORG_ADMIN')
+        );
+        allow update: if isVerified() && isValidId(orgId) && isValidId(memberUid) && isValidOrgMember(incoming(), orgId, memberUid) &&
+          incoming().uid == existing().uid &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (isOrgAdmin(orgId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'status', 'updatedAt']))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(memberUid) && isOrgAdmin(orgId) && memberUid != request.auth.uid;
+      }
+
+      match /departments/{departmentId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(departmentId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(departmentId) &&
+          isValidDepartment(incoming(), orgId, departmentId) &&
+          isOrgAdmin(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(departmentId) &&
+          isValidDepartment(incoming(), orgId, departmentId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (isOrgAdmin(orgId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'code', 'headName', 'description', 'status', 'updatedAt']))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(departmentId) && isOrgAdmin(orgId);
+      }
+
+      match /locations/{locationId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(locationId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(locationId) &&
+          isValidLocation(incoming(), orgId, locationId) &&
+          isOrgAdmin(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(locationId) &&
+          isValidLocation(incoming(), orgId, locationId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (isOrgAdmin(orgId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'code', 'type', 'address', 'city', 'country', 'updatedAt']))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(locationId) && isOrgAdmin(orgId);
+      }
+
+      match /employees/{employeeId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(employeeId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(employeeId) &&
+          isValidEmployee(incoming(), orgId, employeeId) &&
+          hasOrgRole(orgId, ['SUPER_ADMIN', 'ORG_ADMIN', 'IT_MANAGER']);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(employeeId) &&
+          isValidEmployee(incoming(), orgId, employeeId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (hasOrgRole(orgId, ['ORG_ADMIN', 'IT_MANAGER']) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'fullName', 'email', 'phone', 'departmentId', 'locationId',
+                'position', 'managerName', 'status', 'startDate', 'notes', 'updatedAt'
+              ]))
+          );
+        allow delete: if false;
+      }
+
+      match /assets/{assetId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(assetId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(assetId) &&
+          isValidAsset(incoming(), orgId, assetId) &&
+          isAssetOperator(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(assetId) &&
+          isValidAsset(incoming(), orgId, assetId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (hasOrgRole(orgId, ['ORG_ADMIN', 'IT_MANAGER']) && incoming().diff(existing()).affectedKeys().hasOnly([
+              'assetTag', 'name', 'category', 'manufacturer', 'model', 'serialNumber',
+              'processor', 'ram', 'storage', 'operatingSystem', 'osVersion', 'macAddress', 'ipAddress', 'hostname',
+              'purchaseDate', 'purchasePrice', 'currency', 'vendor', 'warrantyStart', 'warrantyEnd',
+              'condition', 'status', 'locationId', 'departmentId', 'assignedEmployeeId', 'assignedTechnicianName',
+              'notes', 'updatedAt'
+            ])) ||
+            (hasOrgRole(orgId, ['IT_TECHNICIAN']) && incoming().diff(existing()).affectedKeys().hasOnly([
+              'condition', 'status', 'locationId', 'departmentId', 'assignedEmployeeId',
+              'assignedTechnicianName', 'ipAddress', 'hostname', 'osVersion', 'notes', 'updatedAt'
+            ]))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(assetId) && isOrgAdmin(orgId);
+      }
+
+      match /assignments/{assignmentId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(assignmentId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(assignmentId) &&
+          isValidAssignment(incoming(), orgId, assignmentId) &&
+          isAssetOperator(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(assignmentId) &&
+          isValidAssignment(incoming(), orgId, assignmentId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().assetId == existing().assetId &&
+          incoming().createdAt == existing().createdAt &&
+          existing().status == 'ACTIVE' && (
+            isSuperAdmin() ||
+            (isAssetOperator(orgId) && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'conditionAtReturn', 'missingAccessories', 'returnDate', 'notes', 'acknowledged', 'updatedAt'
+            ]))
+          );
+        allow delete: if false;
+      }
+
+      match /inventory/{itemId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(itemId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(itemId) &&
+          isValidInventoryItem(incoming(), orgId, itemId) &&
+          isInventoryOperator(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(itemId) &&
+          isValidInventoryItem(incoming(), orgId, itemId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (isInventoryOperator(orgId) && incoming().diff(existing()).affectedKeys().hasOnly([
+              'sku', 'name', 'category', 'manufacturer', 'description', 'quantity',
+              'minStock', 'maxStock', 'unit', 'locationId', 'unitPrice', 'currency', 'supplier', 'updatedAt'
+            ]))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(itemId) && isOrgAdmin(orgId);
+      }
+
+      match /inventoryTransactions/{txId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(txId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(txId) &&
+          isValidInventoryTransaction(incoming(), orgId, txId) &&
+          isInventoryOperator(orgId);
+        allow update, delete: if false;
+      }
+
+      match /maintenance/{recordId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(recordId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(recordId) &&
+          isValidMaintenance(incoming(), orgId, recordId) &&
+          isAssetOperator(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(recordId) &&
+          isValidMaintenance(incoming(), orgId, recordId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().assetId == existing().assetId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            isOrgAdmin(orgId) ||
+            (isAssetOperator(orgId) &&
+              !(existing().status in ['COMPLETED', 'CANCELLED']) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'technicianName', 'scheduledDate', 'completionDate', 'status',
+                'issue', 'workPerformed', 'partsUsed', 'cost', 'notes', 'updatedAt'
+              ]))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(recordId) && isOrgAdmin(orgId);
+      }
+
+      match /knowledgeArticles/{articleId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(articleId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(articleId) &&
+          isValidArticle(incoming(), orgId, articleId) &&
+          isAssetOperator(orgId);
+        allow update: if isVerified() && isValidId(orgId) && isValidId(articleId) &&
+          isValidArticle(incoming(), orgId, articleId) &&
+          incoming().id == existing().id &&
+          incoming().orgId == existing().orgId &&
+          incoming().createdAt == existing().createdAt && (
+            isSuperAdmin() ||
+            (isAssetOperator(orgId) && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'category', 'accessLevel', 'status', 'summary', 'content', 'tags', 'updatedAt'
+            ]))
+          );
+        allow delete: if isVerified() && isValidId(orgId) && isValidId(articleId) && hasOrgRole(orgId, ['SUPER_ADMIN', 'ORG_ADMIN', 'IT_MANAGER']);
+      }
+
+      match /activityLogs/{logId} {
+        allow get: if isVerified() && isValidId(orgId) && isValidId(logId) && isOrgMember(orgId);
+        allow list: if isVerified() && (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+        allow create: if isVerified() && isValidId(orgId) && isValidId(logId) &&
+          isValidActivityLog(incoming(), orgId, logId) &&
+          isOrgMember(orgId);
+        allow update, delete: if false;
+      }
+    }
+  }
+}

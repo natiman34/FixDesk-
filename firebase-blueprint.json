@@ -1,0 +1,345 @@
+{
+  "entities": {
+    "Organization": {
+      "title": "Organization",
+      "description": "Multi-tenant organization workspace isolating IT assets, inventory, employees, and maintenance records.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "slug": { "type": "string", "minLength": 2, "maxLength": 80, "pattern": "^[a-z0-9\\-]+$" },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "website": { "type": "string", "maxLength": 200 },
+        "address": { "type": "string", "maxLength": 300 },
+        "timezone": { "type": "string", "maxLength": 64 },
+        "currency": { "type": "string", "maxLength": 8 },
+        "dateFormat": { "type": "string", "maxLength": 32 },
+        "warrantyAlertDays": { "type": "number" },
+        "maintenanceReminderDays": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "slug", "ownerUid", "currency", "timezone", "createdAt", "updatedAt"]
+    },
+    "OrgMember": {
+      "title": "Organization Member",
+      "description": "Role-based access control membership mapping a Firebase user UID to an organization role.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": {
+          "type": "string",
+          "enum": ["SUPER_ADMIN", "ORG_ADMIN", "IT_MANAGER", "IT_TECHNICIAN", "INVENTORY_MANAGER", "EMPLOYEE"]
+        },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "orgId", "displayName", "role", "status", "createdAt", "updatedAt"]
+    },
+    "UserPrivateProfile": {
+      "title": "User Private Profile",
+      "description": "Isolated PII document for an authenticated user (email, phone, active organization).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "activeOrgId": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "updatedAt"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Organizational department or team associated with employees, assets, and maintenance.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 24 },
+        "headName": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 400 },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "name", "code", "status", "createdAt", "updatedAt"]
+    },
+    "Location": {
+      "title": "Location",
+      "description": "Physical office, building, or site where IT assets and spare parts reside.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "code": { "type": "string", "maxLength": 24 },
+        "type": { "type": "string", "enum": ["HEADQUARTERS", "BRANCH_OFFICE", "BUILDING", "SERVER_ROOM", "WAREHOUSE", "FIELD_SITE"] },
+        "address": { "type": "string", "maxLength": 300 },
+        "city": { "type": "string", "maxLength": 80 },
+        "country": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "name", "code", "type", "createdAt", "updatedAt"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Organization staff record linked to assigned IT assets and return history.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "employeeCode": { "type": "string", "maxLength": 40 },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "position": { "type": "string", "maxLength": 100 },
+        "managerName": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "startDate": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "employeeCode", "fullName", "email", "departmentId", "locationId", "position", "status", "createdAt", "updatedAt"]
+    },
+    "Asset": {
+      "title": "IT Asset",
+      "description": "Tracked IT hardware asset with specifications, warranty, assignment, and lifecycle state.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "assetTag": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 64 },
+        "manufacturer": { "type": "string", "maxLength": 80 },
+        "model": { "type": "string", "maxLength": 100 },
+        "serialNumber": { "type": "string", "maxLength": 100 },
+        "processor": { "type": "string", "maxLength": 100 },
+        "ram": { "type": "string", "maxLength": 40 },
+        "storage": { "type": "string", "maxLength": 60 },
+        "operatingSystem": { "type": "string", "maxLength": 80 },
+        "osVersion": { "type": "string", "maxLength": 60 },
+        "macAddress": { "type": "string", "maxLength": 32 },
+        "ipAddress": { "type": "string", "maxLength": 45 },
+        "hostname": { "type": "string", "maxLength": 100 },
+        "purchaseDate": { "type": "string", "maxLength": 32 },
+        "purchasePrice": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 8 },
+        "vendor": { "type": "string", "maxLength": 120 },
+        "warrantyStart": { "type": "string", "maxLength": 32 },
+        "warrantyEnd": { "type": "string", "maxLength": 32 },
+        "condition": { "type": "string", "enum": ["EXCELLENT", "GOOD", "FAIR", "POOR", "DAMAGED"] },
+        "status": { "type": "string", "enum": ["AVAILABLE", "ASSIGNED", "IN_REPAIR", "UNDER_MAINTENANCE", "RETIRED", "LOST", "DAMAGED", "DISPOSED"] },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "assignedEmployeeId": { "type": "string", "maxLength": 128 },
+        "assignedTechnicianName": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 1500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "assetTag", "name", "category", "manufacturer", "model", "serialNumber", "condition", "status", "locationId", "departmentId", "createdAt", "updatedAt"]
+    },
+    "AssetAssignment": {
+      "title": "Asset Assignment",
+      "description": "Record of equipment issuance, transfer, or return between IT and an employee/department.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "assetId": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "actionType": { "type": "string", "enum": ["ASSIGN", "RETURN", "TRANSFER"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "RETURNED", "TRANSFERRED"] },
+        "conditionAtHandover": { "type": "string", "maxLength": 32 },
+        "conditionAtReturn": { "type": "string", "maxLength": 32 },
+        "accessories": { "type": "string", "maxLength": 400 },
+        "missingAccessories": { "type": "string", "maxLength": 400 },
+        "assignedDate": { "type": "string", "maxLength": 32 },
+        "returnDate": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "acknowledged": { "type": "boolean" },
+        "performedBy": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "assetId", "employeeId", "actionType", "status", "assignedDate", "performedBy", "createdAt", "updatedAt"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "IT spare part or consumable supply item tracked by quantity and reorder thresholds.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 64 },
+        "manufacturer": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 600 },
+        "quantity": { "type": "number" },
+        "minStock": { "type": "number" },
+        "maxStock": { "type": "number" },
+        "unit": { "type": "string", "maxLength": 32 },
+        "locationId": { "type": "string", "maxLength": 128 },
+        "unitPrice": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 8 },
+        "supplier": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "sku", "name", "category", "quantity", "minStock", "maxStock", "unit", "locationId", "unitPrice", "createdAt", "updatedAt"]
+    },
+    "InventoryTransaction": {
+      "title": "Inventory Transaction",
+      "description": "Immutable stock movement entry for additions, issuances, returns, transfers, and adjustments.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["ADD", "ISSUE", "RETURN", "TRANSFER", "ADJUST"] },
+        "quantityDelta": { "type": "number" },
+        "resultingQuantity": { "type": "number" },
+        "reference": { "type": "string", "maxLength": 160 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "performedBy": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "itemId", "type", "quantityDelta", "resultingQuantity", "performedBy", "createdAt"]
+    },
+    "MaintenanceRecord": {
+      "title": "Maintenance Record",
+      "description": "Preventive or corrective IT maintenance record and recurring schedule.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "assetId": { "type": "string", "maxLength": 128 },
+        "maintenanceType": { "type": "string", "maxLength": 64 },
+        "technicianName": { "type": "string", "maxLength": 120 },
+        "scheduledDate": { "type": "string", "maxLength": 32 },
+        "completionDate": { "type": "string", "maxLength": 32 },
+        "recurrence": { "type": "string", "enum": ["NONE", "MONTHLY", "QUARTERLY", "ANNUAL", "CUSTOM"] },
+        "customIntervalDays": { "type": "number" },
+        "status": { "type": "string", "enum": ["SCHEDULED", "IN_PROGRESS", "PENDING_PARTS", "COMPLETED", "CANCELLED"] },
+        "description": { "type": "string", "maxLength": 800 },
+        "issue": { "type": "string", "maxLength": 800 },
+        "workPerformed": { "type": "string", "maxLength": 1500 },
+        "partsUsed": { "type": "string", "maxLength": 400 },
+        "cost": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 8 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "assetId", "maintenanceType", "technicianName", "scheduledDate", "recurrence", "status", "description", "cost", "createdAt", "updatedAt"]
+    },
+    "KnowledgeArticle": {
+      "title": "Knowledge Base Article",
+      "description": "Internal IT SOP, policy, or troubleshooting documentation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "category": { "type": "string", "maxLength": 64 },
+        "accessLevel": { "type": "string", "enum": ["IT_ONLY", "EMPLOYEE_ACCESSIBLE", "RESTRICTED"] },
+        "status": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+        "summary": { "type": "string", "maxLength": 400 },
+        "content": { "type": "string", "maxLength": 20000 },
+        "tags": { "type": "array" },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "title", "category", "accessLevel", "status", "content", "authorName", "createdAt", "updatedAt"]
+    },
+    "ActivityLog": {
+      "title": "Activity Audit Log",
+      "description": "Append-only audit trail recording all significant IT operational events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orgId": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "action": { "type": "string", "maxLength": 80 },
+        "entityType": { "type": "string", "maxLength": 64 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "summary": { "type": "string", "maxLength": 400 },
+        "previousValue": { "type": "string", "maxLength": 600 },
+        "newValue": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "orgId", "actorUid", "actorName", "action", "entityType", "entityId", "summary", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivateProfile" },
+      "description": "Private authenticated user profile storing email and active organization pointer."
+    },
+    "/organizations/{orgId}": {
+      "schema": { "$ref": "#/entities/Organization" },
+      "description": "Organization root document and workspace settings."
+    },
+    "/organizations/{orgId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/OrgMember" },
+      "description": "Organization membership and RBAC role assignments."
+    },
+    "/organizations/{orgId}/departments/{departmentId}": {
+      "schema": { "$ref": "#/entities/Department" },
+      "description": "Organization departments."
+    },
+    "/organizations/{orgId}/locations/{locationId}": {
+      "schema": { "$ref": "#/entities/Location" },
+      "description": "Physical offices, buildings, and sites."
+    },
+    "/organizations/{orgId}/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Employee directory records."
+    },
+    "/organizations/{orgId}/assets/{assetId}": {
+      "schema": { "$ref": "#/entities/Asset" },
+      "description": "IT hardware asset inventory."
+    },
+    "/organizations/{orgId}/assignments/{assignmentId}": {
+      "schema": { "$ref": "#/entities/AssetAssignment" },
+      "description": "Asset assignment, transfer, and return history."
+    },
+    "/organizations/{orgId}/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "IT supplies and spare parts."
+    },
+    "/organizations/{orgId}/inventoryTransactions/{txId}": {
+      "schema": { "$ref": "#/entities/InventoryTransaction" },
+      "description": "Append-only inventory stock movement transactions."
+    },
+    "/organizations/{orgId}/maintenance/{recordId}": {
+      "schema": { "$ref": "#/entities/MaintenanceRecord" },
+      "description": "Preventive and corrective maintenance records."
+    },
+    "/organizations/{orgId}/knowledgeArticles/{articleId}": {
+      "schema": { "$ref": "#/entities/KnowledgeArticle" },
+      "description": "Internal IT documentation and SOPs."
+    },
+    "/organizations/{orgId}/activityLogs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Immutable operational audit logs."
+    }
+  }
+}

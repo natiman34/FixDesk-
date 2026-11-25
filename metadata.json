@@ -1,0 +1,8 @@
+{
+  "name": "FixDesk — IT Operations & Asset Management",
+  "description": "Enterprise IT asset management, hardware inventory, equipment assignment, preventive maintenance, documentation, and network utilities platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
