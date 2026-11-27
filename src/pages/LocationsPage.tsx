@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Edit3, MapPin, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Edit3, MapPin, Plus, Trash2, Download, Building2, Users, Package } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { locationSchema } from '../core/validation/schemas';
 import {
@@ -11,6 +11,8 @@ import {
   Modal,
   PageHeader,
   Select,
+  Toast,
+  KPICard,
 } from '../components/ui/Primitives';
 import type { Location, LocationType } from '../core/types/domain';
 
@@ -29,6 +31,8 @@ export function LocationsPage() {
   const [editing, setEditing] = useState<Location | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Location | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: '',
     code: '',
@@ -40,14 +44,14 @@ export function LocationsPage() {
 
   if (!workspace) return null;
 
-  const openNew = () => {
+  const openNew = useCallback(() => {
     setEditing(null);
     setForm({ name: '', code: '', type: 'BRANCH_OFFICE', address: '', city: '', country: '' });
     setErrors({});
     setModalOpen(true);
-  };
+  }, []);
 
-  const openEdit = (loc: Location) => {
+  const openEdit = useCallback((loc: Location) => {
     setEditing(loc);
     setForm({
       name: loc.name,
@@ -59,7 +63,7 @@ export function LocationsPage() {
     });
     setErrors({});
     setModalOpen(true);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,9 +74,59 @@ export function LocationsPage() {
       setErrors(errs);
       return;
     }
-    await saveLocation({ ...parsed.data, id: editing?.id });
-    setModalOpen(false);
+    setSubmitting(true);
+    try {
+      await saveLocation({ ...parsed.data, id: editing?.id });
+      setModalOpen(false);
+      setToast({
+        type: 'success',
+        message: editing ? 'Location updated successfully' : 'Location added successfully',
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save location' });
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteLocation(deleteTarget.id);
+      setDeleteTarget(null);
+      setToast({ type: 'success', message: 'Location deleted successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to delete location' });
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Code', 'Name', 'Type', 'Address', 'City', 'Country', 'Assets', 'Employees', 'Stock SKUs'];
+    const rows = workspace.locations.map((loc) => [
+      loc.code,
+      loc.name,
+      loc.type.replace(/_/g, ' '),
+      loc.address,
+      loc.city,
+      loc.country,
+      String(workspace.assets.filter((a) => a.locationId === loc.id).length),
+      String(workspace.employees.filter((e) => e.locationId === loc.id).length),
+      String(workspace.inventory.filter((i) => i.locationId === loc.id).length),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `locations-${workspace.organization.slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToast({ type: 'success', message: 'Locations exported to CSV' });
+  };
+
+  const totalAssets = workspace.assets.length;
+  const totalEmployees = workspace.employees.length;
+  const totalStock = workspace.inventory.length;
 
   return (
     <div className="space-y-5">
@@ -80,19 +134,75 @@ export function LocationsPage() {
         title="Offices & Locations"
         description="Manage headquarters, regional branches, server rooms, warehouses, and field sites."
         actions={
-          can('locations:manage') && (
-            <Button onClick={openNew}>
-              <Plus className="w-4 h-4" />
-              Add Location
-            </Button>
-          )
+          <>
+            {can('locations:manage') && (
+              <Button onClick={handleExportCSV} variant="secondary">
+                <Download className="w-4 h-4" />
+                Export CSV
+              </Button>
+            )}
+            {can('locations:manage') && (
+              <Button onClick={openNew}>
+                <Plus className="w-4 h-4" />
+                Add Location
+              </Button>
+            )}
+          </>
         }
       />
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KPICard
+          label="Total Locations"
+          value={workspace.locations.length}
+          sub={`${workspace.locations.filter((l) => l.type === 'HEADQUARTERS').length} HQ`}
+          tone="default"
+          icon={Building2}
+        />
+        <KPICard
+          label="Assets Distributed"
+          value={totalAssets}
+          sub="Across all sites"
+          tone="info"
+          icon={Package}
+        />
+        <KPICard
+          label="Employees Located"
+          value={totalEmployees}
+          sub="Assigned to offices"
+          tone="success"
+          icon={Users}
+        />
+        <KPICard
+          label="Stock SKUs Stored"
+          value={totalStock}
+          sub="In warehouses & rooms"
+          tone="default"
+          icon={Package}
+        />
+      </div>
 
       {workspace.locations.length === 0 ? (
         <EmptyState
           title="No office locations configured"
           description="Add your headquarters, server rooms, and branch offices to map assets and inventory."
+          action={
+            can('locations:manage') && (
+              <Button onClick={openNew}>
+                <Plus className="w-4 h-4" />
+                Create First Location
+              </Button>
+            )
+          }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -103,7 +213,7 @@ export function LocationsPage() {
             return (
               <div
                 key={loc.id}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col justify-between gap-4"
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col justify-between gap-4 animate-fade-in"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -220,10 +330,12 @@ export function LocationsPage() {
             </Field>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">{editing ? 'Save Location' : 'Add Location'}</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Saving...' : editing ? 'Save Location' : 'Add Location'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -235,10 +347,7 @@ export function LocationsPage() {
         confirmLabel="Delete"
         danger
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={async () => {
-          if (deleteTarget) await deleteLocation(deleteTarget.id);
-          setDeleteTarget(null);
-        }}
+        onConfirm={handleDelete}
       />
     </div>
   );

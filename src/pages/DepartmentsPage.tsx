@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Edit3, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Edit3, Plus, Trash2, Download, Users, Building2, Laptop } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { departmentSchema } from '../core/validation/schemas';
 import {
@@ -13,6 +13,8 @@ import {
   Select,
   StatusText,
   Textarea,
+  Toast,
+  KPICard,
 } from '../components/ui/Primitives';
 import type { Department } from '../core/types/domain';
 
@@ -22,6 +24,8 @@ export function DepartmentsPage() {
   const [editing, setEditing] = useState<Department | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Department | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: '',
     code: '',
@@ -32,14 +36,14 @@ export function DepartmentsPage() {
 
   if (!workspace) return null;
 
-  const openNew = () => {
+  const openNew = useCallback(() => {
     setEditing(null);
     setForm({ name: '', code: '', headName: '', description: '', status: 'ACTIVE' });
     setErrors({});
     setModalOpen(true);
-  };
+  }, []);
 
-  const openEdit = (dept: Department) => {
+  const openEdit = useCallback((dept: Department) => {
     setEditing(dept);
     setForm({
       name: dept.name,
@@ -50,7 +54,7 @@ export function DepartmentsPage() {
     });
     setErrors({});
     setModalOpen(true);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,9 +65,57 @@ export function DepartmentsPage() {
       setErrors(errs);
       return;
     }
-    await saveDepartment({ ...parsed.data, id: editing?.id });
-    setModalOpen(false);
+    setSubmitting(true);
+    try {
+      await saveDepartment({ ...parsed.data, id: editing?.id });
+      setModalOpen(false);
+      setToast({
+        type: 'success',
+        message: editing ? 'Department updated successfully' : 'Department created successfully',
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save department' });
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteDepartment(deleteTarget.id);
+      setDeleteTarget(null);
+      setToast({ type: 'success', message: 'Department deleted successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to delete department' });
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Code', 'Name', 'Head', 'Description', 'Status', 'Employees', 'Assets'];
+    const rows = workspace.departments.map((dept) => [
+      dept.code,
+      dept.name,
+      dept.headName,
+      dept.description,
+      dept.status,
+      String(workspace.employees.filter((e) => e.departmentId === dept.id).length),
+      String(workspace.assets.filter((a) => a.departmentId === dept.id).length),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `departments-${workspace.organization.slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToast({ type: 'success', message: 'Departments exported to CSV' });
+  };
+
+  const activeCount = workspace.departments.filter((d) => d.status === 'ACTIVE').length;
+  const totalEmployees = workspace.employees.length;
+  const totalAssets = workspace.assets.length;
 
   return (
     <div className="space-y-5">
@@ -71,19 +123,75 @@ export function DepartmentsPage() {
         title="Departments & Teams"
         description="Configure your organizational structure and inspect employee and IT asset allocations per unit."
         actions={
-          can('departments:manage') && (
-            <Button onClick={openNew}>
-              <Plus className="w-4 h-4" />
-              Add Department
-            </Button>
-          )
+          <>
+            {can('departments:manage') && (
+              <Button onClick={handleExportCSV} variant="secondary">
+                <Download className="w-4 h-4" />
+                Export CSV
+              </Button>
+            )}
+            {can('departments:manage') && (
+              <Button onClick={openNew}>
+                <Plus className="w-4 h-4" />
+                Add Department
+              </Button>
+            )}
+          </>
         }
       />
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KPICard
+          label="Total Departments"
+          value={workspace.departments.length}
+          sub={`${activeCount} active`}
+          tone="default"
+          icon={Building2}
+        />
+        <KPICard
+          label="Active Departments"
+          value={activeCount}
+          sub={`${totalEmployees} total staff`}
+          tone="success"
+          icon={Users}
+        />
+        <KPICard
+          label="Total Staff"
+          value={totalEmployees}
+          sub="Across all units"
+          tone="info"
+          icon={Users}
+        />
+        <KPICard
+          label="Assets Allocated"
+          value={totalAssets}
+          sub="Tracked by department"
+          tone="default"
+          icon={Laptop}
+        />
+      </div>
 
       {workspace.departments.length === 0 ? (
         <EmptyState
           title="No departments configured"
           description="Create departments such as Finance, HR, Programs, Procurement, Operations, and IT."
+          action={
+            can('departments:manage') && (
+              <Button onClick={openNew}>
+                <Plus className="w-4 h-4" />
+                Create First Department
+              </Button>
+            )
+          }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -93,7 +201,7 @@ export function DepartmentsPage() {
             return (
               <div
                 key={dept.id}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col justify-between gap-4"
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col justify-between gap-4 animate-fade-in"
               >
                 <div className="space-y-2">
                   <div className="flex items-start justify-between gap-2">
@@ -205,10 +313,12 @@ export function DepartmentsPage() {
             />
           </Field>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">{editing ? 'Save Changes' : 'Create Department'}</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Saving...' : editing ? 'Save Changes' : 'Create Department'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -220,10 +330,7 @@ export function DepartmentsPage() {
         confirmLabel="Delete"
         danger
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={async () => {
-          if (deleteTarget) await deleteDepartment(deleteTarget.id);
-          setDeleteTarget(null);
-        }}
+        onConfirm={handleDelete}
       />
     </div>
   );

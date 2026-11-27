@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import {
@@ -11,6 +11,8 @@ import {
   QrCode,
   Search,
   Trash2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { assetSchema } from '../core/validation/schemas';
@@ -26,6 +28,7 @@ import {
   Select,
   StatusText,
   Textarea,
+  Toast,
 } from '../components/ui/Primitives';
 import { formatCurrency, formatDate, todayIsoDate } from '../lib/utils';
 import type { Asset, AssetCondition, AssetStatus } from '../core/types/domain';
@@ -44,7 +47,16 @@ const ASSET_STATUSES: AssetStatus[] = [
 const ASSET_CONDITIONS: AssetCondition[] = ['EXCELLENT', 'GOOD', 'FAIR', 'POOR', 'DAMAGED'];
 
 const COMPUTE_CATEGORIES = new Set(['Laptop', 'Desktop', 'Server', 'Tablet', 'Mobile Phone']);
-const NETWORK_CATEGORIES = new Set(['Laptop', 'Desktop', 'Server', 'Router', 'Switch', 'Access Point', 'Printer', 'UPS']);
+const NETWORK_CATEGORIES = new Set([
+  'Laptop',
+  'Desktop',
+  'Server',
+  'Router',
+  'Switch',
+  'Access Point',
+  'Printer',
+  'UPS',
+]);
 
 function statusTone(status: AssetStatus): 'success' | 'info' | 'warning' | 'danger' | 'neutral' {
   switch (status) {
@@ -84,6 +96,7 @@ export function AssetsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const emptyForm = useMemo(() => {
     const defaultDept = workspace?.departments[0]?.id ?? 'dept-it';
@@ -196,22 +209,22 @@ export function AssetsPage() {
   const totalPages = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
   const pagedAssets = filteredAssets.slice((page - 1) * pageSize, page * pageSize);
 
-  const toggleSort = (col: typeof sortBy) => {
+  const toggleSort = useCallback((col: typeof sortBy) => {
     if (sortBy === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else {
       setSortBy(col);
       setSortDir('asc');
     }
-  };
+  }, [sortBy]);
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditingAsset(null);
     setForm(emptyForm);
     setFormErrors({});
     setFormOpen(true);
-  };
+  }, [emptyForm]);
 
-  const openEdit = (asset: Asset) => {
+  const openEdit = useCallback((asset: Asset) => {
     setEditingAsset(asset);
     setForm({
       assetTag: asset.assetTag,
@@ -244,7 +257,7 @@ export function AssetsPage() {
     });
     setFormErrors({});
     setFormOpen(true);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,17 +279,45 @@ export function AssetsPage() {
         id: editingAsset?.id,
       });
       setFormOpen(false);
+      setToast({
+        type: 'success',
+        message: editingAsset ? 'Asset updated successfully' : 'Asset registered successfully',
+      });
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to save asset',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const downloadQr = () => {
+  const downloadQr = useCallback(() => {
     if (!qrDataUrl || !selectedAsset) return;
     const link = document.createElement('a');
     link.href = qrDataUrl;
     link.download = `${selectedAsset.assetTag}-qr.png`;
     link.click();
+  }, [qrDataUrl, selectedAsset]);
+
+  const copyAssetLink = useCallback(() => {
+    if (!selectedAsset) return;
+    const assetLink = `${window.location.origin}/assets?q=${encodeURIComponent(selectedAsset.assetTag)}`;
+    navigator.clipboard.writeText(assetLink).then(() => {
+      setToast({ type: 'success', message: 'Asset link copied to clipboard' });
+    });
+  }, [selectedAsset]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteAsset(deleteTarget.id);
+      setDeleteTarget(null);
+      setToast({ type: 'success', message: 'Asset deleted successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to delete asset' });
+    }
   };
 
   if (!workspace) return null;
@@ -305,6 +346,14 @@ export function AssetsPage() {
           )
         }
       />
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
 
       {/* Search & Filters */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -400,16 +449,26 @@ export function AssetsPage() {
       ) : (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm" role="grid">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-3 px-4 font-medium">
-                    <button type="button" onClick={() => toggleSort('assetTag')} className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-white">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('assetTag')}
+                      className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-white"
+                      aria-sort={sortBy === 'assetTag' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
                       Asset Tag <ArrowUpDown className="w-3 h-3" />
                     </button>
                   </th>
                   <th className="py-3 px-4 font-medium">
-                    <button type="button" onClick={() => toggleSort('name')} className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-white">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('name')}
+                      className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-white"
+                      aria-sort={sortBy === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
                       Asset / Model <ArrowUpDown className="w-3 h-3" />
                     </button>
                   </th>
@@ -417,7 +476,12 @@ export function AssetsPage() {
                   <th className="py-3 px-4 font-medium">Assigned / Location</th>
                   <th className="py-3 px-4 font-medium">Status</th>
                   <th className="py-3 px-4 font-medium">
-                    <button type="button" onClick={() => toggleSort('warrantyEnd')} className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-white">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('warrantyEnd')}
+                      className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-white"
+                      aria-sort={sortBy === 'warrantyEnd' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
                       Warranty <ArrowUpDown className="w-3 h-3" />
                     </button>
                   </th>
@@ -484,7 +548,7 @@ export function AssetsPage() {
                             onClick={() => setSelectedAsset(asset)}
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            Details
+                            <span className="hidden sm:inline">Details</span>
                           </Button>
                           {can('assets:edit') && (
                             <Button
@@ -494,6 +558,7 @@ export function AssetsPage() {
                               onClick={() => openEdit(asset)}
                             >
                               <Edit3 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Edit</span>
                             </Button>
                           )}
                           {can('assets:delete') && (
@@ -557,6 +622,7 @@ export function AssetsPage() {
                 value={form.assetTag}
                 onChange={(e) => setForm({ ...form, assetTag: e.target.value })}
                 placeholder="FX-LPT-099"
+                autoComplete="off"
               />
             </Field>
             <Field label="Asset Name" htmlFor="assetName" required error={formErrors.name}>
@@ -609,7 +675,7 @@ export function AssetsPage() {
           {COMPUTE_CATEGORIES.has(form.category) && (
             <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
               <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Compute &amp; OS Specifications
+                Compute & OS Specifications
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Field label="Processor" htmlFor="processor">
@@ -692,7 +758,7 @@ export function AssetsPage() {
 
           <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Procurement, Warranty &amp; Lifecycle
+              Procurement, Warranty & Lifecycle
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="Purchase Date" htmlFor="purchaseDate">
@@ -801,7 +867,7 @@ export function AssetsPage() {
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setFormOpen(false)}>
+            <Button variant="secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
               Cancel
             </Button>
             <Button type="submit" disabled={submitting}>
@@ -832,7 +898,7 @@ export function AssetsPage() {
                   <p className="font-medium text-slate-900 dark:text-slate-100">{selectedAsset.condition}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Department &amp; Location</p>
+                  <p className="text-xs text-slate-500">Department & Location</p>
                   <p className="font-medium text-slate-900 dark:text-slate-100">
                     {deptMap.get(selectedAsset.departmentId) ?? '—'} · {locMap.get(selectedAsset.locationId) ?? '—'}
                   </p>
@@ -918,6 +984,10 @@ export function AssetsPage() {
                     <Printer className="w-3.5 h-3.5" />
                     Print
                   </Button>
+                  <Button size="sm" variant="ghost" className="flex-1" onClick={copyAssetLink}>
+                    <Copy className="w-3.5 h-3.5" />
+                    Copy Link
+                  </Button>
                 </div>
               </div>
             </div>
@@ -948,7 +1018,7 @@ export function AssetsPage() {
               </div>
               <div>
                 <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                  Maintenance &amp; Audit Events ({assetMaintenance.length + assetLogs.length})
+                  Maintenance & Audit Events ({assetMaintenance.length + assetLogs.length})
                 </h3>
                 {assetMaintenance.length === 0 && assetLogs.length === 0 ? (
                   <p className="text-xs text-slate-500">No maintenance or audit events yet.</p>
@@ -982,10 +1052,7 @@ export function AssetsPage() {
         confirmLabel="Delete Asset"
         danger
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={async () => {
-          if (deleteTarget) await deleteAsset(deleteTarget.id);
-          setDeleteTarget(null);
-        }}
+        onConfirm={handleDelete}
       />
     </div>
   );

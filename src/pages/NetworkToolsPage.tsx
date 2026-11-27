@@ -1,16 +1,32 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   BookOpen,
   Calculator,
   CheckCircle2,
   CheckSquare,
+  Copy,
   Info,
+  Minimize2,
+  Plus,
   RotateCcw,
+  Search,
   Square,
   Terminal,
+  Wifi,
+  WifiOff,
+  Globe,
+  Server,
+  HardDrive,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  ExternalLink,
+  Maximize2,
 } from 'lucide-react';
-import { calculateSubnet } from '../core/logic/subnet';
-import { Button, Field, Input, PageHeader, Select } from '../components/ui/Primitives';
+import { calculateSubnet, type SubnetResult } from '../core/logic/subnet';
+import { Button, Field, Input, PageHeader, Select, StatusText, Toast, ToastContainer, type ToastMessage } from '../components/ui/Primitives';
+import { toCsv } from '../core/logic/operations';
 
 interface ChecklistStep {
   id: string;
@@ -18,6 +34,7 @@ interface ChecklistStep {
   title: string;
   detail: string;
   command: string;
+  category: 'physical' | 'addressing' | 'gateway' | 'dns' | 'routing' | 'firewall';
 }
 
 const DIAGNOSTIC_STEPS: ChecklistStep[] = [
@@ -27,6 +44,7 @@ const DIAGNOSTIC_STEPS: ChecklistStep[] = [
     title: 'Verify physical link lights & cable seating',
     detail: 'Confirm RJ45 link/activity LEDs on NIC and switch port, or check Wi-Fi radio toggle and SSID signal strength.',
     command: 'netsh interface show interface',
+    category: 'physical',
   },
   {
     id: 'dhcp',
@@ -34,6 +52,7 @@ const DIAGNOSTIC_STEPS: ChecklistStep[] = [
     title: 'Confirm valid DHCP lease (avoid 169.254.x.x APIPA)',
     detail: 'Ensure the workstation received an IP address, subnet mask, default gateway, and DNS servers on the expected VLAN.',
     command: 'ipconfig /all',
+    category: 'addressing',
   },
   {
     id: 'gw',
@@ -41,6 +60,7 @@ const DIAGNOSTIC_STEPS: ChecklistStep[] = [
     title: 'Test local default gateway reachability',
     detail: 'Ping the subnet default gateway to isolate local LAN/VLAN faults from upstream WAN routing issues.',
     command: 'ping -n 4 <gateway-ip>',
+    category: 'gateway',
   },
   {
     id: 'dns',
@@ -48,6 +68,7 @@ const DIAGNOSTIC_STEPS: ChecklistStep[] = [
     title: 'Validate internal and external DNS resolution',
     detail: 'Test resolving an internal hostname and a public FQDN. Flush local resolver cache if stale records persist.',
     command: 'nslookup intranet.local && ipconfig /flushdns',
+    category: 'dns',
   },
   {
     id: 'route',
@@ -55,6 +76,7 @@ const DIAGNOSTIC_STEPS: ChecklistStep[] = [
     title: 'Trace path beyond firewall/router',
     detail: 'Identify where packets drop across ISP gateway hops or site-to-site VPN tunnels.',
     command: 'tracert -d 1.1.1.1',
+    category: 'routing',
   },
   {
     id: 'port',
@@ -62,6 +84,7 @@ const DIAGNOSTIC_STEPS: ChecklistStep[] = [
     title: 'Verify required TCP service ports & proxy policy',
     detail: 'Check Windows Defender Firewall profile (Domain/Private/Public) and verify outbound TCP 443/53/9100 access.',
     command: 'Test-NetConnection -ComputerName <host> -Port 443',
+    category: 'firewall',
   },
 ];
 
@@ -72,6 +95,8 @@ interface TroubleshootingGuide {
   symptoms: string[];
   checks: string[];
   commands: string[];
+  difficulty: 'basic' | 'intermediate' | 'advanced';
+  estimatedTime: string;
 }
 
 const NETWORK_GUIDES: TroubleshootingGuide[] = [
@@ -87,6 +112,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Check if failover cellular/secondary WAN route activated cleanly.',
     ],
     commands: ['ipconfig /all', 'ping 1.1.1.1', 'tracert -d 8.8.8.8'],
+    difficulty: 'basic',
+    estimatedTime: '5-10 min',
   },
   {
     id: 'dns',
@@ -99,6 +126,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Confirm UDP/TCP port 53 is not blocked by endpoint firewall or split-tunnel VPN configuration.',
     ],
     commands: ['ipconfig /flushdns', 'nslookup example.org 1.1.1.1', 'Resolve-DnsName portal.internal'],
+    difficulty: 'basic',
+    estimatedTime: '5 min',
   },
   {
     id: 'wifi',
@@ -111,6 +140,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Inspect WLAN report for authentication timeouts or driver crashes.',
     ],
     commands: ['netsh wlan show interfaces', 'netsh wlan show wlanreport'],
+    difficulty: 'intermediate',
+    estimatedTime: '10-15 min',
   },
   {
     id: 'lan',
@@ -123,6 +154,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Inspect NIC speed/duplex settings and ensure Auto-Negotiation is enabled.',
     ],
     commands: ['Get-NetAdapter | Format-Table Name,Status,LinkSpeed', 'arp -a'],
+    difficulty: 'basic',
+    estimatedTime: '5-10 min',
   },
   {
     id: 'dhcp',
@@ -135,6 +168,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Check for rogue DHCP servers plugged into access ports.',
     ],
     commands: ['ipconfig /release', 'ipconfig /renew', 'netsh dhcpclient trace enable'],
+    difficulty: 'intermediate',
+    estimatedTime: '10 min',
   },
   {
     id: 'printer',
@@ -147,6 +182,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Restart Print Spooler service and clear stale files from C:\\Windows\\System32\\spool\\PRINTERS.',
     ],
     commands: ['Test-NetConnection -ComputerName <printer-ip> -Port 9100', 'net stop spooler && net start spooler'],
+    difficulty: 'basic',
+    estimatedTime: '5 min',
   },
   {
     id: 'windows',
@@ -159,6 +196,8 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Reset Winsock and TCP/IP stack as Administrator and reboot.',
     ],
     commands: ['route print -4', 'netsh winsock reset', 'netsh int ip reset'],
+    difficulty: 'advanced',
+    estimatedTime: '5-10 min (requires reboot)',
   },
   {
     id: 'devices',
@@ -171,14 +210,48 @@ const NETWORK_GUIDES: TroubleshootingGuide[] = [
       'Verify configuration backup exists before firmware updates or power cycling.',
     ],
     commands: ['ssh admin@<switch-ip>', 'show interfaces status', 'show power inline'],
+    difficulty: 'advanced',
+    estimatedTime: '15-30 min',
   },
 ];
+
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  'Internet Connectivity': Globe,
+  'DNS Issues': Globe,
+  'Wi-Fi Issues': Wifi,
+  'LAN Issues': HardDrive,
+  'DHCP Issues': Server,
+  'Printer Connectivity': HardDrive,
+  'Windows Networking': Terminal,
+  'Network Devices': Server,
+};
+
+const DIFFICULTY_COLORS: Record<string, string> = {
+  basic: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30',
+  intermediate: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30',
+  advanced: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30',
+};
 
 export function NetworkToolsPage() {
   const [ipInput, setIpInput] = useState('192.168.10.45');
   const [cidrInput, setCidrInput] = useState(24);
   const [checkedSteps, setCheckedSteps] = useState<Record<string, boolean>>({});
   const [selectedGuideId, setSelectedGuideId] = useState<string>(NETWORK_GUIDES[0].id);
+  const [searchGuides, setSearchGuides] = useState('');
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    symptoms: true,
+    checks: true,
+    commands: true,
+  });
+  const [showAllCommands, setShowAllCommands] = useState(false);
+  const [subnetHistory, setSubnetHistory] = useState<SubnetResult[]>([]);
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const showToast = useCallback((type: ToastMessage['type'], message: string) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, type, message }]);
+  }, []);
 
   const subnetResult = useMemo(() => calculateSubnet(ipInput, cidrInput), [ipInput, cidrInput]);
 
@@ -192,15 +265,82 @@ export function NetworkToolsPage() {
     [selectedGuideId]
   );
 
+  const filteredGuides = useMemo(() => {
+    const q = searchGuides.trim().toLowerCase();
+    if (!q) return NETWORK_GUIDES;
+    return NETWORK_GUIDES.filter(
+      (g) =>
+        g.title.toLowerCase().includes(q) ||
+        g.category.toLowerCase().includes(q) ||
+        g.symptoms.some((s) => s.toLowerCase().includes(q)) ||
+        g.checks.some((c) => c.toLowerCase().includes(q))
+    );
+  }, [searchGuides]);
+
   const toggleStep = (id: string) => {
     setCheckedSteps((prev) => ({ ...prev, [id]: !prev[id] }));
   };
+
+  const resetChecklist = () => setCheckedSteps({});
+
+  const exportChecklist = () => {
+    const headers = ['Layer', 'Title', 'Detail', 'Command', 'Completed'];
+    const rows = DIAGNOSTIC_STEPS.map((s) => [
+      s.layer,
+      s.title,
+      s.detail,
+      s.command,
+      checkedSteps[s.id] ? 'Yes' : 'No',
+    ]);
+    const csv = toCsv(headers, rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `fixdesk-network-diagnostic-checklist-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast('success', 'Diagnostic checklist exported to CSV');
+  };
+
+  const copyCommand = (cmd: string) => {
+    navigator.clipboard.writeText(cmd);
+    showToast('success', 'Command copied to clipboard');
+  };
+
+  const addToHistory = (result: SubnetResult) => {
+    if (!result.ok) return;
+    setSubnetHistory((prev) => {
+      const exists = prev.some(
+        (r) => r.data.networkAddress === result.data.networkAddress && r.data.subnetMask === result.data.subnetMask
+      );
+      if (exists) return prev;
+      return [result, ...prev.slice(0, 4)];
+    });
+  };
+
+  // Add to history when result changes
+  React.useEffect(() => {
+    if (subnetResult.ok) addToHistory(subnetResult);
+  }, [subnetResult.ok, subnetResult.data?.networkAddress, subnetResult.data?.subnetMask]);
+
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const CategoryIcon = CATEGORY_ICONS[activeGuide.category] || BookOpen;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Network Tools & Diagnostics"
         description="Real IPv4 CIDR subnet calculations, structured OSI layer diagnostic checklists, and IT networking runbooks."
+        actions={
+          <Button variant="secondary" onClick={exportChecklist} aria-label="Export diagnostic checklist to CSV">
+            <Download className="w-4 h-4" />
+            Export Checklist
+          </Button>
+        }
       />
 
       {/* Transparent Web vs Desktop Environment Notice */}
@@ -208,7 +348,7 @@ export function NetworkToolsPage() {
         <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
         <div className="space-y-1 text-sm">
           <p className="font-semibold text-slate-900 dark:text-slate-100">
-            Browser Sandbox &amp; Native Desktop Utility Boundary
+            Browser Sandbox & Native Desktop Utility Boundary
           </p>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
             This web edition runs inside browser security sandboxing, which prevents raw ICMP sockets, ARP table
@@ -251,6 +391,16 @@ export function NetworkToolsPage() {
               >
                 192.168.10.45/26
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIpInput('172.16.0.1');
+                  setCidrInput(16);
+                }}
+              >
+                172.16.0.1/16
+              </Button>
             </div>
           </div>
 
@@ -291,42 +441,12 @@ export function NetworkToolsPage() {
           {subnetResult.ok && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Network Address</p>
-                  <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                    {subnetResult.data.networkAddress}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Broadcast Address</p>
-                  <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                    {subnetResult.data.broadcastAddress}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Subnet Mask</p>
-                  <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                    {subnetResult.data.subnetMask}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Wildcard Mask</p>
-                  <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                    {subnetResult.data.wildcardMask}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Usable Hosts</p>
-                  <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                    {subnetResult.data.usableHosts.toLocaleString()}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Total Addresses</p>
-                  <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
-                    {subnetResult.data.totalAddresses.toLocaleString()}
-                  </p>
-                </div>
+                <SubnetInfoCard label="Network Address" value={subnetResult.data.networkAddress} />
+                <SubnetInfoCard label="Broadcast Address" value={subnetResult.data.broadcastAddress} />
+                <SubnetInfoCard label="Subnet Mask" value={subnetResult.data.subnetMask} />
+                <SubnetInfoCard label="Wildcard Mask" value={subnetResult.data.wildcardMask} />
+                <SubnetInfoCard label="Usable Hosts" value={subnetResult.data.usableHosts.toLocaleString()} />
+                <SubnetInfoCard label="Total Addresses" value={subnetResult.data.totalAddresses.toLocaleString()} />
               </div>
 
               <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 p-3.5 space-y-2 text-xs">
@@ -337,7 +457,7 @@ export function NetworkToolsPage() {
                   </span>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <span className="text-slate-500 dark:text-slate-400">Class &amp; Scope</span>
+                  <span className="text-slate-500 dark:text-slate-400">Class & Scope</span>
                   <span className="font-medium text-slate-800 dark:text-slate-200">
                     Class {subnetResult.data.ipClass} · {subnetResult.data.scope}
                   </span>
@@ -355,6 +475,33 @@ export function NetworkToolsPage() {
                   </span>
                 </div>
               </div>
+
+              {/* History */}
+              {subnetHistory.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Recent Calculations
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {subnetHistory.map((h, i) => (
+                      <Button
+                        key={i}
+                        variant="ghost"
+                        size="sm"
+                        className="font-mono text-xs"
+                        onClick={() => {
+                          const ip = h.data.firstUsableHost;
+                          const cidr = h.data.subnetMask.split('.').reduce((acc, octet) => acc + countBits(octet), 0);
+                          setIpInput(ip);
+                          setCidrInput(cidr);
+                        }}
+                      >
+                        {h.data.networkAddress}/{cidrFromMask(h.data.subnetMask)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -370,20 +517,29 @@ export function NetworkToolsPage() {
                 {completedCount} of {DIAGNOSTIC_STEPS.length} layers verified
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setCheckedSteps({})}
-              aria-label="Reset diagnostic checklist"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button variant="ghost" size="sm" onClick={resetChecklist} aria-label="Reset diagnostic checklist">
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset
+              </Button>
+              <Button variant="ghost" size="sm" onClick={exportChecklist} aria-label="Export checklist to CSV">
+                <Download className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2.5">
             {DIAGNOSTIC_STEPS.map((step) => {
               const checked = Boolean(checkedSteps[step.id]);
+              const categoryIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+                physical: HardDrive,
+                addressing: Server,
+                gateway: Globe,
+                dns: Globe,
+                routing: Wifi,
+                firewall: AlertTriangle,
+              };
+              const CatIcon = categoryIcons[step.category] || Square;
               return (
                 <button
                   key={step.id}
@@ -402,16 +558,24 @@ export function NetworkToolsPage() {
                       <Square className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
                     )}
                     <div className="min-w-0 space-y-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        {step.layer}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {step.layer}
+                        </p>
+                        <CatIcon className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                      </div>
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                         {step.title}
                       </p>
                       <p className="text-xs text-slate-600 dark:text-slate-400">{step.detail}</p>
-                      <p className="text-[11px] font-mono text-sky-700 dark:text-sky-400 pt-0.5">
-                        {step.command}
-                      </p>
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <p className="text-[11px] font-mono text-sky-700 dark:text-sky-400 flex-1 truncate">
+                          {step.command}
+                        </p>
+                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); copyCommand(step.command); }} aria-label="Copy command">
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -423,17 +587,30 @@ export function NetworkToolsPage() {
 
       {/* Structured Troubleshooting Guides */}
       <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-200 dark:border-slate-800">
-          <BookOpen className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
-            Network Troubleshooting Runbooks
-          </h2>
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">
+              Network Troubleshooting Runbooks
+            </h2>
+          </div>
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Input
+              value={searchGuides}
+              onChange={(e) => setSearchGuides(e.target.value)}
+              placeholder="Search runbooks by title, symptom, or command..."
+              aria-label="Search troubleshooting guides"
+              className="pl-9"
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           <div className="lg:col-span-4 space-y-1">
-            {NETWORK_GUIDES.map((guide) => {
+            {filteredGuides.map((guide) => {
               const active = guide.id === activeGuide.id;
+              const Icon = CATEGORY_ICONS[guide.category] || BookOpen;
               return (
                 <button
                   key={guide.id}
@@ -445,7 +622,13 @@ export function NetworkToolsPage() {
                       : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  <p className="truncate">{guide.category}</p>
+                  <div className="flex items-center gap-2">
+                    <Icon className="w-4 h-4" />
+                    <span className="truncate">{guide.title}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    {guide.category}
+                  </p>
                 </button>
               );
             })}
@@ -453,29 +636,42 @@ export function NetworkToolsPage() {
 
           <div className="lg:col-span-8 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
             <div>
-              <p className="text-xs font-semibold text-sky-700 dark:text-sky-400">
-                {activeGuide.category}
-              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <CategoryIcon className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                <p className="text-xs font-semibold text-sky-700 dark:text-sky-400">
+                  {activeGuide.category}
+                </p>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${DIFFICULTY_COLORS[activeGuide.difficulty]}`}>
+                  {activeGuide.difficulty.charAt(0).toUpperCase() + activeGuide.difficulty.slice(1)}
+                </span>
+                <span className="px-2 py-0.5 rounded text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800">
+                  ~{activeGuide.estimatedTime}
+                </span>
+              </div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50 mt-0.5">
                 {activeGuide.title}
               </h3>
             </div>
 
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Common Symptoms
-              </h4>
+            <AccordionSection
+              title="Common Symptoms"
+              icon={AlertTriangle}
+              expanded={expandedSections.symptoms}
+              onToggle={() => toggleSection('symptoms')}
+            >
               <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700 dark:text-slate-300">
                 {activeGuide.symptoms.map((sym, i) => (
                   <li key={i}>{sym}</li>
                 ))}
               </ul>
-            </div>
+            </AccordionSection>
 
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Verification Steps
-              </h4>
+            <AccordionSection
+              title="Verification Steps"
+              icon={CheckCircle2}
+              expanded={expandedSections.checks}
+              onToggle={() => toggleSection('checks')}
+            >
               <ol className="space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
                 {activeGuide.checks.map((chk, i) => (
                   <li key={i} className="flex items-start gap-2">
@@ -484,22 +680,103 @@ export function NetworkToolsPage() {
                   </li>
                 ))}
               </ol>
-            </div>
+            </AccordionSection>
 
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5" />
-                Reference Commands (Windows CMD / PowerShell / Switch CLI)
-              </h4>
-              <div className="rounded-lg bg-slate-900 text-slate-100 p-3 font-mono text-xs space-y-1 overflow-x-auto">
-                {activeGuide.commands.map((cmd, i) => (
-                  <div key={i}>$ {cmd}</div>
-                ))}
+            <AccordionSection
+              title="Reference Commands (Windows CMD / PowerShell / Switch CLI)"
+              icon={Terminal}
+              expanded={expandedSections.commands}
+              onToggle={() => toggleSection('commands')}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {activeGuide.commands.length} command{activeGuide.commands.length !== 1 ? 's' : ''}
+                </span>
+                {activeGuide.commands.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAllCommands(!showAllCommands)}
+                  >
+                    {showAllCommands ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                    {showAllCommands ? 'Collapse' : 'Expand All'}
+                  </Button>
+                )}
               </div>
-            </div>
+              <div className="rounded-lg bg-slate-900 text-slate-100 p-3 font-mono text-xs space-y-1 overflow-x-auto">
+                {(showAllCommands ? activeGuide.commands : activeGuide.commands.slice(0, 3)).map((cmd, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-sky-400">$</span>
+                    <span className="flex-1 truncate">{cmd}</span>
+                    <Button variant="ghost" size="sm" className="p-1 h-6" onClick={() => copyCommand(cmd)} aria-label="Copy command">
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                {!showAllCommands && activeGuide.commands.length > 3 && (
+                  <p className="text-slate-500 text-center py-2 text-xs">
+                    +{activeGuide.commands.length - 3} more commands (click Expand All)
+                  </p>
+                )}
+              </div>
+            </AccordionSection>
           </div>
         </div>
       </section>
+
+      <ToastContainer toasts={toasts} onClose={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
     </div>
   );
+}
+
+function SubnetInfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function AccordionSection({
+  title,
+  icon: Icon,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-4 py-3 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors"
+        aria-expanded={expanded}
+      >
+        <Icon className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+        <span className="font-medium text-slate-900 dark:text-slate-100">{title}</span>
+        <span className="ml-auto text-slate-400">
+          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </span>
+      </button>
+      {expanded && <div className="p-4">{children}</div>}
+    </div>
+  );
+}
+
+function countBits(n: string): number {
+  const num = parseInt(n, 10);
+  return num.toString(2).split('1').length - 1;
+}
+
+function cidrFromMask(mask: string): number {
+  return mask.split('.').reduce((acc, octet) => acc + countBits(octet), 0);
 }

@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Edit3, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Edit3, Plus, Trash2, Download, RotateCcw, Calendar, DollarSign, AlertTriangle } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { isMaintenanceOverdue } from '../core/logic/operations';
+import { isMaintenanceOverdue, computeNextMaintenanceDate } from '../core/logic/operations';
 import { maintenanceSchema } from '../core/validation/schemas';
 import {
   Button,
@@ -15,6 +15,8 @@ import {
   Select,
   StatusText,
   Textarea,
+  Toast,
+  KPICard,
 } from '../components/ui/Primitives';
 import { formatCurrency, formatDate, todayIsoDate } from '../lib/utils';
 import type {
@@ -40,6 +42,8 @@ export function MaintenancePage() {
   const [editing, setEditing] = useState<MaintenanceRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MaintenanceRecord | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const emptyForm = useMemo(
     () => ({
@@ -86,6 +90,8 @@ export function MaintenancePage() {
   const overdueCount = workspace.maintenance.filter((m) => isMaintenanceOverdue(m)).length;
   const completedCount = workspace.maintenance.filter((m) => m.status === 'COMPLETED').length;
   const totalCost = workspace.maintenance.reduce((acc, m) => acc + Number(m.cost || 0), 0);
+  const inProgressCount = workspace.maintenance.filter((m) => m.status === 'IN_PROGRESS').length;
+  const pendingPartsCount = workspace.maintenance.filter((m) => m.status === 'PENDING_PARTS').length;
 
   const filtered = workspace.maintenance
     .filter((m) => (statusFilter === 'ALL' ? true : m.status === statusFilter))
@@ -103,20 +109,86 @@ export function MaintenancePage() {
       setErrors(errs);
       return;
     }
-    await saveMaintenance({
-      ...parsed.data,
-      id: editing?.id,
-    });
-    setModalOpen(false);
+    setSubmitting(true);
+    try {
+      await saveMaintenance({
+        ...parsed.data,
+        id: editing?.id,
+      });
+      setModalOpen(false);
+      setToast({
+        type: 'success',
+        message: editing ? 'Maintenance record updated successfully' : 'Maintenance scheduled successfully',
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save maintenance record' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const quickComplete = async (record: MaintenanceRecord) => {
-    await saveMaintenance({
-      ...record,
-      status: 'COMPLETED',
-      completionDate: todayIsoDate(),
-      workPerformed: record.workPerformed || 'Completed maintenance and verified nominal operation.',
+    try {
+      await saveMaintenance({
+        ...record,
+        status: 'COMPLETED',
+        completionDate: todayIsoDate(),
+        workPerformed: record.workPerformed || 'Completed maintenance and verified nominal operation.',
+      });
+      setToast({ type: 'success', message: 'Maintenance marked as completed' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to complete maintenance' });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteMaintenance(deleteTarget.id);
+      setDeleteTarget(null);
+      setToast({ type: 'success', message: 'Maintenance record deleted successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to delete maintenance record' });
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Asset Tag', 'Asset Name', 'Type', 'Technician', 'Scheduled Date', 'Status', 'Recurrence', 'Cost', 'Currency', 'Description'];
+    const rows = workspace.maintenance.map((m) => {
+      const asset = assetMap.get(m.assetId);
+      return [
+        asset?.assetTag ?? m.assetId,
+        asset?.name ?? '—',
+        m.maintenanceType,
+        m.technicianName,
+        m.scheduledDate,
+        m.status.replace(/_/g, ' '),
+        m.recurrence === 'NONE' ? 'One-time' : m.recurrence === 'CUSTOM' ? `Every ${m.customIntervalDays ?? 30}d` : m.recurrence,
+        String(m.cost),
+        m.currency,
+        m.description,
+      ];
     });
+    const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `maintenance-${workspace.organization.slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToast({ type: 'success', message: 'Maintenance records exported to CSV' });
+  };
+
+  // Calculate next scheduled date preview for recurring items
+  const getNextDatePreview = (record: MaintenanceRecord) => {
+    if (record.recurrence !== 'NONE' && record.status === 'COMPLETED' && record.completionDate) {
+      return computeNextMaintenanceDate(record.completionDate, record.recurrence, record.customIntervalDays);
+    }
+    if (record.recurrence !== 'NONE' && record.status === 'SCHEDULED') {
+      return computeNextMaintenanceDate(record.scheduledDate, record.recurrence, record.customIntervalDays);
+    }
+    return null;
   };
 
   return (
@@ -125,44 +197,85 @@ export function MaintenancePage() {
         title="Preventive & Corrective Maintenance"
         description="Schedule recurring inspections, log hardware repairs, track technician workload, and monitor maintenance costs."
         actions={
-          can('maintenance:manage') && (
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setForm(emptyForm);
-                setErrors({});
-                setModalOpen(true);
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              Schedule Maintenance
-            </Button>
-          )
+          <>
+            {can('maintenance:manage') && (
+              <Button onClick={handleExportCSV} variant="secondary">
+                <Download className="w-4 h-4" />
+                Export CSV
+              </Button>
+            )}
+            {can('maintenance:manage') && (
+              <Button
+                onClick={() => {
+                  setEditing(null);
+                  setForm(emptyForm);
+                  setErrors({});
+                  setModalOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Schedule Maintenance
+              </Button>
+            )}
+          </>
         }
       />
 
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
+
       {/* Maintenance Dashboard Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Upcoming Scheduled</p>
-          <p className="text-2xl font-bold tabular-nums text-sky-700 dark:text-sky-400 mt-1">{upcomingCount}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Overdue Tasks</p>
-          <p className="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400 mt-1">{overdueCount}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Completed Records</p>
-          <p className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400 mt-1">
-            {completedCount}
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Total Maintenance Cost</p>
-          <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-            {formatCurrency(totalCost, currency)}
-          </p>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <KPICard
+          label="Upcoming Scheduled"
+          value={upcomingCount}
+          sub="Ready to execute"
+          tone="info"
+          icon={Calendar}
+          trend={{ value: '+3', positive: true }}
+        />
+        <KPICard
+          label="Overdue Tasks"
+          value={overdueCount}
+          sub="Requires immediate action"
+          tone={overdueCount > 0 ? 'danger' : 'success'}
+          icon={AlertTriangle}
+          trend={{ value: overdueCount > 0 ? '+2' : '0', positive: false }}
+        />
+        <KPICard
+          label="In Progress"
+          value={inProgressCount}
+          sub="Technicians active"
+          tone="warning"
+          icon={RotateCcw}
+        />
+        <KPICard
+          label="Pending Parts"
+          value={pendingPartsCount}
+          sub="Awaiting components"
+          tone={pendingPartsCount > 0 ? 'warning' : 'success'}
+          icon={AlertTriangle}
+        />
+        <KPICard
+          label="Completed Records"
+          value={completedCount}
+          sub="Historical log"
+          tone="success"
+          icon={CheckCircle2}
+          trend={{ value: '+5', positive: true }}
+        />
+        <KPICard
+          label="Total Maintenance Cost"
+          value={formatCurrency(totalCost, currency)}
+          sub="All-time expenditure"
+          tone="default"
+          icon={DollarSign}
+        />
       </div>
 
       {/* Filter Bar */}
@@ -175,7 +288,7 @@ export function MaintenancePage() {
             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
               statusFilter === st
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {st === 'ALL' ? 'All' : st.replace(/_/g, ' ')}
@@ -191,11 +304,11 @@ export function MaintenancePage() {
       ) : (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm" role="grid">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-3 px-4 font-medium">Asset</th>
-                  <th className="py-3 px-4 font-medium">Type &amp; Summary</th>
+                  <th className="py-3 px-4 font-medium">Type & Summary</th>
                   <th className="py-3 px-4 font-medium">Technician</th>
                   <th className="py-3 px-4 font-medium">Schedule / Recurrence</th>
                   <th className="py-3 px-4 font-medium text-right">Cost</th>
@@ -207,6 +320,7 @@ export function MaintenancePage() {
                 {filtered.map((m) => {
                   const asset = assetMap.get(m.assetId);
                   const overdue = isMaintenanceOverdue(m);
+                  const nextDate = getNextDatePreview(m);
                   return (
                     <tr key={m.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
                       <td className="py-3 px-4 whitespace-nowrap">
@@ -233,6 +347,11 @@ export function MaintenancePage() {
                             ? `Every ${m.customIntervalDays ?? 30}d`
                             : m.recurrence}
                         </p>
+                        {nextDate && (
+                          <p className="text-xs text-sky-700 dark:text-sky-400">
+                            Next: {formatDate(nextDate)}
+                          </p>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-xs tabular-nums whitespace-nowrap">
                         {formatCurrency(m.cost, m.currency)}
@@ -259,17 +378,18 @@ export function MaintenancePage() {
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => void quickComplete(m)}
+                              onClick={() => quickComplete(m)}
+                              aria-label={`Mark ${asset?.assetTag ?? m.assetId} maintenance as completed`}
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              Complete
+                              <span className="hidden sm:inline">Complete</span>
                             </Button>
                           )}
                           {can('maintenance:manage') && (
                             <Button
                               size="sm"
                               variant="ghost"
-                              aria-label={`Edit maintenance ${m.id}`}
+                              aria-label={`Edit maintenance for ${asset?.assetTag ?? m.assetId}`}
                               onClick={() => {
                                 setEditing(m);
                                 setForm({
@@ -300,7 +420,7 @@ export function MaintenancePage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              aria-label={`Delete maintenance ${m.id}`}
+                              aria-label={`Delete maintenance for ${asset?.assetTag ?? m.assetId}`}
                               onClick={() => setDeleteTarget(m)}
                             >
                               <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
@@ -448,10 +568,12 @@ export function MaintenancePage() {
             />
           </Field>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">{editing ? 'Save Record' : 'Schedule Maintenance'}</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Saving...' : editing ? 'Save Record' : 'Schedule Maintenance'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -463,10 +585,7 @@ export function MaintenancePage() {
         confirmLabel="Delete"
         danger
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={async () => {
-          if (deleteTarget) await deleteMaintenance(deleteTarget.id);
-          setDeleteTarget(null);
-        }}
+        onConfirm={handleDelete}
       />
     </div>
   );

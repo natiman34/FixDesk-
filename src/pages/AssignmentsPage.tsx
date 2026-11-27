@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, CheckCircle2, FileText, Plus, Printer, RotateCcw } from 'lucide-react';
+import { ArrowLeftRight, CheckCircle2, FileText, Plus, Printer, RotateCcw, Trash2, Edit3, Copy } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { assignAssetSchema, returnAssetSchema } from '../core/validation/schemas';
 import {
   Button,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -13,6 +14,7 @@ import {
   Select,
   StatusText,
   Textarea,
+  Toast,
 } from '../components/ui/Primitives';
 import { formatDate, todayIsoDate } from '../lib/utils';
 import type { AssetAssignment, AssetCondition, AssetStatus } from '../core/types/domain';
@@ -27,6 +29,8 @@ export function AssignmentsPage() {
   const [transferTarget, setTransferTarget] = useState<AssetAssignment | null>(null);
   const [handoverDoc, setHandoverDoc] = useState<AssetAssignment | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const availableAssets = useMemo(
     () => workspace?.assets.filter((a) => a.status === 'AVAILABLE') ?? [],
@@ -43,7 +47,7 @@ export function AssignmentsPage() {
     departmentId: '',
     locationId: '',
     conditionAtHandover: 'EXCELLENT' as AssetCondition,
-    accessories: 'Power Adapter, Carrying Case',
+    accessories: '65W USB-C Power Adapter, Laptop Sleeve',
     assignedDate: todayIsoDate(),
     notes: '',
     acknowledged: true,
@@ -64,7 +68,7 @@ export function AssignmentsPage() {
     notes: '',
   });
 
-  const openAssignModal = () => {
+  const openAssignModal = useCallback(() => {
     const firstEmp = activeEmployees[0];
     setAssignForm({
       assetId: availableAssets[0]?.id ?? '',
@@ -79,7 +83,7 @@ export function AssignmentsPage() {
     });
     setErrors({});
     setAssignModalOpen(true);
-  };
+  }, [availableAssets, activeEmployees, workspace?.departments, workspace?.locations]);
 
   useEffect(() => {
     const action = searchParams.get('action');
@@ -120,9 +124,17 @@ export function AssignmentsPage() {
       setErrors(errs);
       return;
     }
-    const created = await assignAsset(parsed.data);
-    setAssignModalOpen(false);
-    setHandoverDoc(created);
+    setSubmitting(true);
+    try {
+      const created = await assignAsset(parsed.data);
+      setAssignModalOpen(false);
+      setHandoverDoc(created);
+      setToast({ type: 'success', message: 'Asset assigned successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to assign asset' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReturnSubmit = async (e: React.FormEvent) => {
@@ -138,28 +150,44 @@ export function AssignmentsPage() {
       setErrors(errs);
       return;
     }
-    await returnAsset({
-      assignmentId: returnTarget.id,
-      returnDate: parsed.data.returnDate,
-      conditionAtReturn: parsed.data.conditionAtReturn,
-      missingAccessories: parsed.data.missingAccessories,
-      resultingStatus: parsed.data.resultingStatus as AssetStatus,
-      notes: parsed.data.notes,
-    });
-    setReturnTarget(null);
+    setSubmitting(true);
+    try {
+      await returnAsset({
+        assignmentId: returnTarget.id,
+        returnDate: parsed.data.returnDate,
+        conditionAtReturn: parsed.data.conditionAtReturn,
+        missingAccessories: parsed.data.missingAccessories,
+        resultingStatus: parsed.data.resultingStatus as AssetStatus,
+        notes: parsed.data.notes,
+      });
+      setReturnTarget(null);
+      setToast({ type: 'success', message: 'Asset returned successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to return asset' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleTransferSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!transferTarget || !transferForm.toEmployeeId) return;
-    await transferAsset({
-      assetId: transferTarget.assetId,
-      toEmployeeId: transferForm.toEmployeeId,
-      toDepartmentId: transferForm.toDepartmentId,
-      toLocationId: transferForm.toLocationId,
-      notes: transferForm.notes,
-    });
-    setTransferTarget(null);
+    setSubmitting(true);
+    try {
+      await transferAsset({
+        assetId: transferTarget.assetId,
+        toEmployeeId: transferForm.toEmployeeId,
+        toDepartmentId: transferForm.toDepartmentId,
+        toLocationId: transferForm.toLocationId,
+        notes: transferForm.notes,
+      });
+      setTransferTarget(null);
+      setToast({ type: 'success', message: 'Asset transferred successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to transfer asset' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -176,6 +204,14 @@ export function AssignmentsPage() {
           )
         }
       />
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -228,7 +264,7 @@ export function AssignmentsPage() {
       ) : (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm" role="grid">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-3 px-4 font-medium">Asset</th>
@@ -282,9 +318,14 @@ export function AssignmentsPage() {
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => setHandoverDoc(asg)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setHandoverDoc(asg)}
+                            aria-label={`View handover form for ${asset?.assetTag ?? asg.assetId}`}
+                          >
                             <FileText className="w-3.5 h-3.5" />
-                            Handover
+                            <span className="hidden sm:inline">Handover</span>
                           </Button>
                           {asg.status === 'ACTIVE' && can('assignments:manage') && (
                             <>
@@ -301,9 +342,10 @@ export function AssignmentsPage() {
                                   });
                                   setTransferTarget(asg);
                                 }}
+                                aria-label={`Transfer ${asset?.assetTag ?? asg.assetId}`}
                               >
                                 <ArrowLeftRight className="w-3.5 h-3.5" />
-                                Transfer
+                                <span className="hidden sm:inline">Transfer</span>
                               </Button>
                               <Button
                                 size="sm"
@@ -319,9 +361,10 @@ export function AssignmentsPage() {
                                   setErrors({});
                                   setReturnTarget(asg);
                                 }}
+                                aria-label={`Return ${asset?.assetTag ?? asg.assetId}`}
                               >
                                 <RotateCcw className="w-3.5 h-3.5" />
-                                Return
+                                <span className="hidden sm:inline">Return</span>
                               </Button>
                             </>
                           )}
@@ -463,12 +506,12 @@ export function AssignmentsPage() {
           </label>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setAssignModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setAssignModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={submitting}>
               <CheckCircle2 className="w-4 h-4" />
-              Confirm Assignment
+              {submitting ? 'Assigning...' : 'Confirm Assignment'}
             </Button>
           </div>
         </form>
@@ -550,10 +593,12 @@ export function AssignmentsPage() {
           </Field>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setReturnTarget(null)}>
+            <Button variant="secondary" onClick={() => setReturnTarget(null)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">Complete Return</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Processing...' : 'Complete Return'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -624,10 +669,12 @@ export function AssignmentsPage() {
             />
           </Field>
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setTransferTarget(null)}>
+            <Button variant="secondary" onClick={() => setTransferTarget(null)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">Confirm Transfer</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Transferring...' : 'Confirm Transfer'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -667,7 +714,7 @@ export function AssignmentsPage() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block">Asset Tag &amp; Model</span>
+                  <span className="text-slate-500 block">Asset Tag & Model</span>
                   <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">
                     {assetMap.get(handoverDoc.assetId)?.assetTag} — {assetMap.get(handoverDoc.assetId)?.name}
                   </span>
@@ -699,12 +746,12 @@ export function AssignmentsPage() {
               </div>
 
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pt-2 border-t border-slate-100 dark:border-slate-800">
-                I acknowledge receipt of the above organizational IT equipment in the stated condition and agree to comply with the IT Equipment Care &amp; Return Policy.
+                I acknowledge receipt of the above organizational IT equipment in the stated condition and agree to comply with the IT Equipment Care & Return Policy.
               </p>
 
               <div className="grid grid-cols-2 gap-6 pt-6 text-xs text-slate-500">
                 <div className="border-t border-slate-300 dark:border-slate-700 pt-2">
-                  Employee Signature &amp; Date
+                  Employee Signature & Date
                 </div>
                 <div className="border-t border-slate-300 dark:border-slate-700 pt-2">
                   IT Custodian ({handoverDoc.performedBy})

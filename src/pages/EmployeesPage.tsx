@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckSquare, Edit3, Eye, Plus, Search, UserCheck, UserX } from 'lucide-react';
+import { CheckSquare, Edit3, Eye, Plus, Search, UserCheck, UserX, Download } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { employeeSchema } from '../core/validation/schemas';
 import {
   Button,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -13,6 +14,8 @@ import {
   Select,
   StatusText,
   Textarea,
+  Toast,
+  KPICard,
 } from '../components/ui/Primitives';
 import { formatDate, getInitials, todayIsoDate } from '../lib/utils';
 import type { Employee } from '../core/types/domain';
@@ -30,6 +33,8 @@ export function EmployeesPage() {
   const [detailEmp, setDetailEmp] = useState<Employee | null>(null);
   const [exitChecklist, setExitChecklist] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const emptyForm = useMemo(
     () => ({
@@ -80,6 +85,10 @@ export function EmployeesPage() {
     );
   });
 
+  const activeCount = workspace.employees.filter((e) => e.status === 'ACTIVE').length;
+  const inactiveCount = workspace.employees.filter((e) => e.status === 'INACTIVE').length;
+  const totalAssetsAssigned = workspace.assets.filter((a) => a.assignedEmployeeId).length;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = employeeSchema.safeParse(form);
@@ -89,15 +98,34 @@ export function EmployeesPage() {
       setErrors(errs);
       return;
     }
-    await saveEmployee({ ...parsed.data, id: editing?.id });
-    setFormOpen(false);
+    setSubmitting(true);
+    try {
+      await saveEmployee({ ...parsed.data, id: editing?.id });
+      setFormOpen(false);
+      setToast({
+        type: 'success',
+        message: editing ? 'Employee updated successfully' : 'Employee added successfully',
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save employee' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const toggleStatus = async (emp: Employee) => {
-    await saveEmployee({
-      ...emp,
-      status: emp.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
-    });
+    try {
+      await saveEmployee({
+        ...emp,
+        status: emp.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      });
+      setToast({
+        type: 'success',
+        message: emp.status === 'ACTIVE' ? 'Employee deactivated' : 'Employee reactivated',
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to update status' });
+    }
   };
 
   const empAssignedAssets = detailEmp
@@ -107,27 +135,102 @@ export function EmployeesPage() {
     ? workspace.assignments.filter((asg) => asg.employeeId === detailEmp.id)
     : [];
 
+  const handleExportCSV = () => {
+    const headers = ['Employee ID', 'Full Name', 'Email', 'Phone', 'Department', 'Location', 'Position', 'Manager', 'Status', 'Start Date', 'Assigned Assets'];
+    const rows = workspace.employees.map((emp) => [
+      emp.employeeCode,
+      emp.fullName,
+      emp.email,
+      emp.phone,
+      deptMap.get(emp.departmentId) ?? '—',
+      locMap.get(emp.locationId) ?? '—',
+      emp.position,
+      emp.managerName,
+      emp.status,
+      emp.startDate,
+      String(workspace.assets.filter((a) => a.assignedEmployeeId === emp.id).length),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `employees-${workspace.organization.slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToast({ type: 'success', message: 'Employee directory exported to CSV' });
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader
         title="Employee Directory"
         description="Manage staff profiles, office assignments, active IT equipment custody, and offboarding return checklists. Deactivating an employee preserves all asset history."
         actions={
-          can('employees:manage') && (
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setForm(emptyForm);
-                setErrors({});
-                setFormOpen(true);
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              Add Employee
-            </Button>
-          )
+          <>
+            {can('employees:manage') && (
+              <Button onClick={handleExportCSV} variant="secondary">
+                <Download className="w-4 h-4" />
+                Export CSV
+              </Button>
+            )}
+            {can('employees:manage') && (
+              <Button
+                onClick={() => {
+                  setEditing(null);
+                  setForm(emptyForm);
+                  setErrors({});
+                  setFormOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Add Employee
+              </Button>
+            )}
+          </>
         }
       />
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KPICard
+          label="Total Employees"
+          value={workspace.employees.length}
+          sub={`${activeCount} active · ${inactiveCount} inactive`}
+          tone="default"
+          icon={UserCheck}
+        />
+        <KPICard
+          label="Active Staff"
+          value={activeCount}
+          sub={`${workspace.departments.length} departments`}
+          tone="success"
+          icon={UserCheck}
+          trend={{ value: '+2', positive: true }}
+        />
+        <KPICard
+          label="Assets Assigned"
+          value={totalAssetsAssigned}
+          sub="Currently in custody"
+          tone="info"
+          icon={Eye}
+        />
+        <KPICard
+          label="Departments"
+          value={workspace.departments.length}
+          sub={`${workspace.locations.length} locations`}
+          tone="default"
+          icon={Search}
+        />
+      </div>
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -175,11 +278,11 @@ export function EmployeesPage() {
       ) : (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm" role="grid">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-3 px-4 font-medium">Employee</th>
-                  <th className="py-3 px-4 font-medium">Department &amp; Office</th>
+                  <th className="py-3 px-4 font-medium">Department & Office</th>
                   <th className="py-3 px-4 font-medium">Position</th>
                   <th className="py-3 px-4 font-medium text-right">Assigned Assets</th>
                   <th className="py-3 px-4 font-medium">Status</th>
@@ -222,9 +325,14 @@ export function EmployeesPage() {
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => setDetailEmp(emp)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDetailEmp(emp)}
+                            aria-label={`View profile for ${emp.fullName}`}
+                          >
                             <Eye className="w-3.5 h-3.5" />
-                            Profile
+                            <span className="hidden sm:inline">Profile</span>
                           </Button>
                           {can('employees:manage') && (
                             <>
@@ -257,7 +365,7 @@ export function EmployeesPage() {
                                 size="sm"
                                 variant="ghost"
                                 aria-label={emp.status === 'ACTIVE' ? `Deactivate ${emp.fullName}` : `Reactivate ${emp.fullName}`}
-                                onClick={() => void toggleStatus(emp)}
+                                onClick={() => toggleStatus(emp)}
                               >
                                 {emp.status === 'ACTIVE' ? (
                                   <UserX className="w-3.5 h-3.5 text-amber-600" />
@@ -382,10 +490,12 @@ export function EmployeesPage() {
             />
           </Field>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setFormOpen(false)}>
+            <Button variant="secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">{editing ? 'Save Changes' : 'Add Employee'}</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Saving...' : editing ? 'Save Changes' : 'Add Employee'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -452,7 +562,7 @@ export function EmployeesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-4 border-t border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                  Assignment &amp; Return History ({empHistory.length})
+                  Assignment & Return History ({empHistory.length})
                 </h3>
                 {empHistory.length === 0 ? (
                   <p className="text-xs text-slate-500">No historical handovers recorded.</p>
@@ -474,7 +584,7 @@ export function EmployeesPage() {
               <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-2.5 bg-slate-50 dark:bg-slate-950/50">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 dark:text-slate-200">
                   <CheckSquare className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Employee Exit &amp; Equipment Return Checklist</span>
+                  <span>Employee Exit & Equipment Return Checklist</span>
                 </div>
                 {[
                   'All assigned laptops, monitors, and mobile units returned',

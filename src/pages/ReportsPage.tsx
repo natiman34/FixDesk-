@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Download, Printer } from 'lucide-react';
+import React, { useMemo, useState, useCallback } from 'react';
+import { Download, Printer, Filter, ChevronDown, ChevronUp, Calendar, BarChart2, PieChart, TrendingUp, FileText, Package } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import {
   computeDashboardMetrics,
@@ -8,8 +8,30 @@ import {
   isMaintenanceOverdue,
   toCsv,
 } from '../core/logic/operations';
-import { Button, PageHeader, Select, StatusText } from '../components/ui/Primitives';
+import {
+  Button,
+  KPICard,
+  PageHeader,
+  Select,
+  StatusText,
+  Toast,
+  ToastContainer,
+  type ToastMessage,
+} from '../components/ui/Primitives';
 import { formatCurrency, formatDate, todayIsoDate } from '../lib/utils';
+import {
+  BarChart,
+  Bar,
+  Cell,
+  PieChart as RechartsPieChart,
+  Pie,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
 
 type ReportTab = 'assets' | 'inventory' | 'maintenance' | 'employees' | 'monthly';
 
@@ -24,11 +46,173 @@ function downloadCsvFile(filename: string, headers: string[], rows: unknown[][])
   URL.revokeObjectURL(url);
 }
 
+function AssetStatusChart({ data }: { data: Array<{ status: string; count: number }> }) {
+  const colors = {
+    AVAILABLE: '#10b981',
+    ASSIGNED: '#3b82f6',
+    IN_REPAIR: '#f59e0b',
+    UNDER_MAINTENANCE: '#8b5cf6',
+    RETIRED: '#6b7280',
+    DAMAGED: '#ef4444',
+  };
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical">
+          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+          <YAxis
+            type="category"
+            dataKey="status"
+            width={100}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 11 }}
+          />
+          <Tooltip
+            formatter={(value: number) => [value, 'Assets']}
+            contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+          />
+          <Legend />
+          <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={colors[entry.status as keyof typeof colors] || '#888'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function StockHealthChart({ data }: { data: Array<{ status: string; count: number }> }) {
+  const colors = {
+    IN_STOCK: '#10b981',
+    LOW_STOCK: '#f59e0b',
+    OUT_OF_STOCK: '#ef4444',
+    OVERSTOCK: '#3b82f6',
+  };
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <RechartsPieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={50}
+            outerRadius={80}
+            fill="#8884d0"
+            dataKey="count"
+            nameKey="status"
+            label={({ status, count }) => `${status}: ${count}`}
+            labelLine={false}
+          >
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={colors[entry.status as keyof typeof colors] || '#888'} />
+            ))}
+          </Pie>
+          <Tooltip
+            formatter={(value: number) => [value, 'SKUs']}
+            contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+          />
+          <Legend />
+        </RechartsPieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function MaintenanceStatusChart({ data }: { data: Array<{ status: string; count: number }> }) {
+  const colors = {
+    SCHEDULED: '#3b82f6',
+    IN_PROGRESS: '#f59e0b',
+    COMPLETED: '#10b981',
+    OVERDUE: '#ef4444',
+    CANCELLED: '#6b7280',
+  };
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <XAxis dataKey="status" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+          <Tooltip
+            formatter={(value: number) => [value, 'Tasks']}
+            contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+          />
+          <Legend />
+          <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={colors[entry.status as keyof typeof colors] || '#888'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function WarrantyStatusChart({ data }: { data: Array<{ status: string; count: number }> }) {
+  const colors = {
+    ACTIVE: '#10b981',
+    EXPIRING_SOON: '#f59e0b',
+    EXPIRED: '#ef4444',
+    NO_WARRANTY: '#6b7280',
+  };
+
+  return (
+    <div className="h-64">
+      <ResponsiveContainer width="100%" height="100%">
+        <RechartsPieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={50}
+            outerRadius={80}
+            fill="#8884d0"
+            dataKey="count"
+            nameKey="status"
+            label={({ status, count }) => `${status}: ${count}`}
+            labelLine={false}
+          >
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={colors[entry.status as keyof typeof colors] || '#888'} />
+            ))}
+          </Pie>
+          <Tooltip
+            formatter={(value: number) => [value, 'Assets']}
+            contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+          />
+          <Legend />
+        </RechartsPieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export function ReportsPage() {
   const { workspace, can } = useWorkspace();
   const [activeTab, setActiveTab] = useState<ReportTab>('assets');
   const [deptFilter, setDeptFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [dateRange, setDateRange] = useState<{ from: string; to: string }>({
+    from: '',
+    to: '',
+  });
+  const [showFilters, setShowFilters] = useState(false);
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const showToast = useCallback((type: ToastMessage['type'], message: string) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, type, message }]);
+  }, []);
 
   const canExport = can('reports:export');
 
@@ -66,9 +250,11 @@ export function ReportsPage() {
     return workspace.assets.filter((a) => {
       if (deptFilter !== 'ALL' && a.departmentId !== deptFilter) return false;
       if (statusFilter !== 'ALL' && a.status !== statusFilter) return false;
+      if (dateRange.from && a.purchaseDate && a.purchaseDate < dateRange.from) return false;
+      if (dateRange.to && a.purchaseDate && a.purchaseDate > dateRange.to) return false;
       return true;
     });
-  }, [workspace, deptFilter, statusFilter]);
+  }, [workspace, deptFilter, statusFilter, dateRange]);
 
   if (!workspace || !metrics) return null;
 
@@ -196,14 +382,15 @@ export function ReportsPage() {
         ]
       );
     }
+    showToast('success', 'Report exported to CSV');
   };
 
-  const tabs: { id: ReportTab; label: string }[] = [
-    { id: 'assets', label: 'Asset Register & Warranty' },
-    { id: 'inventory', label: 'Inventory & Valuation' },
-    { id: 'maintenance', label: 'Maintenance & Costs' },
-    { id: 'employees', label: 'Employee Equipment' },
-    { id: 'monthly', label: 'Monthly IT Operational Summary' },
+  const tabs: { id: ReportTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: 'assets', label: 'Asset Register & Warranty', icon: BarChart2 },
+    { id: 'inventory', label: 'Inventory & Valuation', icon: PieChart },
+    { id: 'maintenance', label: 'Maintenance & Costs', icon: TrendingUp },
+    { id: 'employees', label: 'Employee Equipment', icon: FileText },
+    { id: 'monthly', label: 'Monthly IT Operational Summary', icon: BarChart2 },
   ];
 
   const expiringOrExpiredAssets = workspace.assets.filter((a) => {
@@ -217,6 +404,40 @@ export function ReportsPage() {
   });
 
   const overdueMaint = workspace.maintenance.filter((m) => isMaintenanceOverdue(m));
+
+  // Chart data
+  const assetStatusData = useMemo(() => {
+    const counts = new Map<string, number>();
+    workspace.assets.forEach((a) => counts.set(a.status, (counts.get(a.status) || 0) + 1));
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }, [workspace?.assets]);
+
+  const stockHealthData = useMemo(() => {
+    const counts = new Map<string, number>();
+    workspace.inventory.forEach((i) => {
+      const st = getStockStatus(i);
+      counts.set(st, (counts.get(st) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }, [workspace?.inventory]);
+
+  const maintenanceStatusData = useMemo(() => {
+    const counts = new Map<string, number>();
+    workspace.maintenance.forEach((m) => {
+      const status = isMaintenanceOverdue(m) ? 'OVERDUE' : m.status;
+      counts.set(status, (counts.get(status) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }, [workspace?.maintenance]);
+
+  const warrantyStatusData = useMemo(() => {
+    const counts = new Map<string, number>();
+    workspace.assets.forEach((a) => {
+      const w = getWarrantyStatus(a.warrantyEnd, workspace.organization.warrantyAlertDays);
+      counts.set(w.status, (counts.get(w.status) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }, [workspace?.assets, workspace?.organization.warrantyAlertDays]);
 
   return (
     <div className="space-y-6">
@@ -247,6 +468,7 @@ export function ReportsPage() {
       >
         {tabs.map((tab) => {
           const active = activeTab === tab.id;
+          const Icon = tab.icon;
           return (
             <button
               key={tab.id}
@@ -254,28 +476,44 @@ export function ReportsPage() {
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2 ${
                 active
                   ? 'border-slate-900 text-slate-900 dark:border-sky-500 dark:text-sky-400'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               }`}
             >
+              <Icon className="w-4 h-4" />
               {tab.label}
             </button>
           );
         })}
       </div>
 
-      {/* ASSET REPORT */}
-      {activeTab === 'assets' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 no-print">
-            <div className="flex flex-wrap gap-3">
+      {/* Filters Panel */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 no-print">
+        <button
+          type="button"
+          onClick={() => setShowFilters(!showFilters)}
+          className="w-full px-5 py-3 flex items-center justify-between gap-3"
+          aria-expanded={showFilters}
+        >
+          <div className="flex items-center gap-2">
+            <Filter className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            <span className="font-medium text-slate-900 dark:text-slate-100">Filters</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {(deptFilter !== 'ALL' || statusFilter !== 'ALL' || dateRange.from || dateRange.to) ? 'Active' : 'None'}
+            </span>
+          </div>
+          {showFilters ? <ChevronUp className="w-5 h-5 text-slate-500" /> : <ChevronDown className="w-5 h-5 text-slate-500" />}
+        </button>
+        {showFilters && (
+          <div className="px-5 pb-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4">
               <Select
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
-                aria-label="Filter report by department"
-                className="w-48"
+                aria-label="Filter by department"
+                className="w-full"
               >
                 <option value="ALL">All Departments</option>
                 {workspace.departments.map((d) => (
@@ -287,29 +525,116 @@ export function ReportsPage() {
               <Select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                aria-label="Filter report by asset status"
-                className="w-48"
+                aria-label="Filter by status"
+                className="w-full"
               >
                 <option value="ALL">All Statuses</option>
-                <option value="AVAILABLE">Available</option>
-                <option value="ASSIGNED">Assigned</option>
-                <option value="IN_REPAIR">In Repair</option>
-                <option value="UNDER_MAINTENANCE">Under Maintenance</option>
-                <option value="RETIRED">Retired</option>
-                <option value="DAMAGED">Damaged</option>
-              </Select>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              Showing {filteredAssets.length} assets · Total book value:{' '}
-              <span className="font-semibold text-slate-900 dark:text-slate-100">
-                {formatCurrency(
-                  filteredAssets.reduce((sum, a) => sum + Number(a.purchasePrice || 0), 0),
-                  currency
+                {activeTab === 'assets' && (
+                  <>
+                    <option value="AVAILABLE">Available</option>
+                    <option value="ASSIGNED">Assigned</option>
+                    <option value="IN_REPAIR">In Repair</option>
+                    <option value="UNDER_MAINTENANCE">Under Maintenance</option>
+                    <option value="RETIRED">Retired</option>
+                    <option value="DAMAGED">Damaged</option>
+                  </>
                 )}
-              </span>
-            </p>
+                {activeTab === 'inventory' && (
+                  <>
+                    <option value="IN_STOCK">In Stock</option>
+                    <option value="LOW_STOCK">Low Stock</option>
+                    <option value="OUT_OF_STOCK">Out of Stock</option>
+                    <option value="OVERSTOCK">Overstock</option>
+                  </>
+                )}
+                {activeTab === 'maintenance' && (
+                  <>
+                    <option value="SCHEDULED">Scheduled</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="OVERDUE">Overdue</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </>
+                )}
+              </Select>
+              <div className="flex gap-2">
+                <Field label="From Date" htmlFor="date-from" className="flex-1">
+                  <Input
+                    id="date-from"
+                    type="date"
+                    value={dateRange.from}
+                    onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
+                    className="h-10"
+                  />
+                </Field>
+                <Field label="To Date" htmlFor="date-to" className="flex-1">
+                  <Input
+                    id="date-to"
+                    type="date"
+                    value={dateRange.to}
+                    onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
+                    className="h-10"
+                  />
+                </Field>
+              </div>
+              {((deptFilter !== 'ALL') || (statusFilter !== 'ALL') || dateRange.from || dateRange.to) && (
+                <Button variant="ghost" size="sm" onClick={() => { setDeptFilter('ALL'); setStatusFilter('ALL'); setDateRange({ from: '', to: '' }); }}>
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ASSET REPORT */}
+      {activeTab === 'assets' && (
+        <div className="space-y-6">
+          {/* Summary KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard
+              label="Total Assets"
+              value={filteredAssets.length}
+              sub={formatCurrency(filteredAssets.reduce((sum, a) => sum + Number(a.purchasePrice || 0), 0), currency)}
+              tone="default"
+              icon={BarChart2}
+            />
+            <KPICard
+              label="Assigned"
+              value={filteredAssets.filter((a) => a.status === 'ASSIGNED').length}
+              sub="Active assignments"
+              tone="info"
+              icon={BarChart2}
+            />
+            <KPICard
+              label="Available"
+              value={filteredAssets.filter((a) => a.status === 'AVAILABLE').length}
+              sub="Ready for deployment"
+              tone="success"
+              icon={BarChart2}
+            />
+            <KPICard
+              label="Warranty Alerts"
+              value={expiringOrExpiredAssets.length}
+              sub="Expiring or expired"
+              tone={expiringOrExpiredAssets.length > 0 ? 'danger' : 'success'}
+              icon={BarChart2}
+            />
           </div>
 
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Asset Status Distribution</h3>
+              <AssetStatusChart data={assetStatusData} />
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Warranty Status Overview</h3>
+              <WarrantyStatusChart data={warrantyStatusData} />
+            </div>
+          </div>
+
+          {/* Data Table */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
@@ -384,7 +709,7 @@ export function ReportsPage() {
 
       {/* INVENTORY REPORT */}
       {activeTab === 'inventory' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <p className="text-xs text-slate-500 dark:text-slate-400">Total Stock Valuation</p>
@@ -403,6 +728,40 @@ export function ReportsPage() {
               <p className="text-xl font-bold text-slate-900 dark:text-slate-50 mt-1 tabular-nums">
                 {workspace.inventoryTransactions.length}
               </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Stock Health Distribution</h3>
+              <StockHealthChart data={stockHealthData} />
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Top Valued Items</h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {workspace.inventory
+                  .sort((a, b) => b.quantity * b.unitPrice - a.quantity * a.unitPrice)
+                  .slice(0, 10)
+                  .map((item) => (
+                    <div key={item.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                          <Package className="w-4 h-4 text-slate-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900 dark:text-slate-100 truncate max-w-xs">{item.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{item.sku}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                          {formatCurrency(item.quantity * item.unitPrice, item.currency || currency)}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{item.quantity} {item.unit}</p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
 
@@ -466,7 +825,7 @@ export function ReportsPage() {
 
       {/* MAINTENANCE REPORT */}
       {activeTab === 'maintenance' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <p className="text-xs text-slate-500 dark:text-slate-400">Cumulative Maintenance Spend</p>
@@ -485,6 +844,33 @@ export function ReportsPage() {
               <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-1 tabular-nums">
                 {workspace.maintenance.filter((m) => m.status === 'COMPLETED').length}
               </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Maintenance Status Distribution</h3>
+              <MaintenanceStatusChart data={maintenanceStatusData} />
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Cost by Maintenance Type</h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {Object.entries(
+                  workspace.maintenance.reduce((acc, m) => {
+                    acc[m.maintenanceType] = (acc[m.maintenanceType] || 0) + m.cost;
+                    return acc;
+                  }, {} as Record<string, number>)
+                )
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([type, cost]) => (
+                    <div key={type} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <span className="text-slate-700 dark:text-slate-300">{type}</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                        {formatCurrency(cost, currency)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
 
@@ -643,10 +1029,21 @@ export function ReportsPage() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Asset Status Overview</h3>
+              <AssetStatusChart data={assetStatusData} />
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-4">Warranty Status Overview</h3>
+              <WarrantyStatusChart data={warrantyStatusData} />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Key Operational Risks &amp; Action Items
+                Key Operational Risks & Action Items
               </h3>
               <ul className="list-disc pl-5 space-y-1.5 text-sm text-slate-600 dark:text-slate-300">
                 <li>
@@ -677,6 +1074,8 @@ export function ReportsPage() {
           </div>
         </div>
       )}
+
+      <ToastContainer toasts={toasts} onClose={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
     </div>
   );
 }

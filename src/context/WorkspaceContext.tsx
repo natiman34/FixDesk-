@@ -129,9 +129,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemePreference>(() => {
     try {
       const saved = window.localStorage.getItem(THEME_KEY) as ThemePreference | null;
-      return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'light';
+      return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
     } catch {
-      return 'light';
+      return 'system';
     }
   });
   const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => {
@@ -153,6 +153,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         pref === 'dark' ||
         (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       root.classList.toggle('dark', isDark);
+      // Update meta theme-color for mobile browsers
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', isDark ? '#020617' : '#f8fafc');
+      }
     };
     apply(theme);
     try {

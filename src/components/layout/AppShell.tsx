@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -25,6 +25,8 @@ import {
   Users,
   Wrench,
   X,
+  Shield,
+  Database,
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { ROLE_LABELS } from '../../core/permissions/rbac';
@@ -36,12 +38,13 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   permission?: Parameters<ReturnType<typeof useWorkspace>['can']>[0];
+  badge?: number;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard:view' },
   { to: '/assets', label: 'Assets', icon: Laptop, permission: 'assets:view' },
-  { to: '/assignments', label: 'Asset Assignments', icon: ArrowLeftRight, permission: 'assignments:view' },
+  { to: '/assignments', label: 'Assignments', icon: ArrowLeftRight, permission: 'assignments:view' },
   { to: '/inventory', label: 'Inventory', icon: Package, permission: 'inventory:view' },
   { to: '/employees', label: 'Employees', icon: Users, permission: 'employees:view' },
   { to: '/departments', label: 'Departments', icon: Building2, permission: 'departments:view' },
@@ -152,27 +155,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setTheme(next);
   };
 
+  const getThemeLabel = (t: 'light' | 'dark' | 'system') => {
+    switch (t) {
+      case 'light':
+        return 'Light';
+      case 'dark':
+        return 'Dark';
+      case 'system':
+        return 'System';
+    }
+  };
+
+  const getThemeIcon = (t: 'light' | 'dark' | 'system') => {
+    switch (t) {
+      case 'light':
+        return <Sun className="w-4 h-4" />;
+      case 'dark':
+        return <Moon className="w-4 h-4" />;
+      case 'system':
+        return <Monitor className="w-4 h-4" />;
+    }
+  };
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('[data-dropdown]')) {
+        setNotifOpen(false);
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Close mobile nav on route change
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   const renderSidebarLinks = (onClickItem?: () => void) => (
-    <nav aria-label="Primary navigation" className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
+    <nav aria-label="Primary navigation" className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5" data-sidebar-nav>
       {visibleNav.map((item) => {
         const Icon = item.icon;
+        const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
         return (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/'}
             onClick={onClickItem}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 whitespace-nowrap',
-                isActive
-                  ? 'bg-slate-900 text-white dark:bg-sky-600 dark:text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/80 dark:hover:text-white'
-              )
-            }
+            className={cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 whitespace-nowrap',
+              isActive
+                ? 'bg-slate-900 text-white dark:bg-sky-600 dark:text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/80 dark:hover:text-white'
+            )}
             title={collapsed ? item.label : undefined}
+            aria-current={isActive ? 'page' : undefined}
           >
-            <Icon className="w-4 h-4 shrink-0" />
+            <Icon className={cn('w-4 h-4 shrink-0 transition-transform', isActive && 'scale-110')} />
             {!collapsed && <span className="truncate">{item.label}</span>}
           </NavLink>
         );
@@ -185,65 +228,91 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop Collapsible Sidebar */}
       <aside
         className={cn(
-          'hidden lg:flex flex-col shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-[width] duration-150 no-print',
-          collapsed ? 'w-16' : 'w-64'
+          'hidden lg:flex flex-col shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-[width,padding] duration-200 ease-out no-print',
+          collapsed ? 'w-16 p-0' : 'w-64'
         )}
+        aria-label="Main navigation"
       >
-        <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2.5 text-left min-w-0 focus-visible:outline-none"
-          >
-            <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-sky-600 text-white flex items-center justify-center shrink-0">
-              <HardDrive className="w-4 h-4" />
-            </div>
-            {!collapsed && (
+        {!collapsed && (
+          <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="flex items-center gap-2.5 text-left min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 p-2"
+              aria-label="Go to Dashboard"
+            >
+              <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-sky-600 text-white flex items-center justify-center shrink-0">
+                <HardDrive className="w-4 h-4" />
+              </div>
               <span className="font-bold text-base tracking-tight text-slate-900 dark:text-white truncate">
                 FixDesk
               </span>
-            )}
-          </button>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
+            >
+              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
+
+        {collapsed && (
           <button
             type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800"
+            onClick={() => navigate('/')}
+            className="w-16 h-14 flex items-center justify-center border-b border-slate-200 dark:border-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900"
+            aria-label="FixDesk - Go to Dashboard"
           >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-sky-600 text-white flex items-center justify-center">
+              <HardDrive className="w-4 h-4" />
+            </div>
           </button>
-        </div>
+        )}
 
         {!collapsed && workspace && (
-          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Organization</p>
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 animate-fade-in">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Organization</p>
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate mt-0.5">
               {workspace.organization.name}
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
+              <Database className="w-3 h-3" />
               {session?.mode === 'cloud' ? 'Cloud Sync (Firestore)' : 'Local Offline Storage'}
             </p>
           </div>
         )}
 
-        {renderSidebarLinks()}
+        <div className={cn('flex-1 overflow-hidden', collapsed ? 'px-0' : 'px-2.5')}>
+          {renderSidebarLinks()}
+        </div>
 
         {!collapsed && session && (
-          <div className="p-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
-            <p className="font-medium text-slate-700 dark:text-slate-300 truncate">{session.displayName}</p>
-            <p className="truncate">{ROLE_LABELS[session.role]}</p>
+          <div className="p-3 border-t border-slate-200 dark:border-slate-800 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-sky-600 text-white text-xs font-semibold flex items-center justify-center shrink-0">
+                {getInitials(session.displayName)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-slate-700 dark:text-slate-300 truncate">{session.displayName}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{ROLE_LABELS[session.role]}</p>
+              </div>
+            </div>
           </div>
         )}
       </aside>
 
       {/* Mobile Drawer */}
       {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
+        <div className="fixed inset-0 z-50 lg:hidden flex animate-fade-in" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <div
-            className="fixed inset-0 bg-slate-950/60"
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
             onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
           />
-          <aside className="relative z-10 w-72 max-w-[85vw] flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+          <aside className="relative z-10 w-72 max-w-[85vw] flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 animate-slide-in-right">
             <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-sky-600 text-white flex items-center justify-center">
@@ -261,6 +330,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             {renderSidebarLinks(() => setMobileNavOpen(false))}
+            {session && (
+              <div className="p-3 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-sky-600 text-white text-xs font-semibold flex items-center justify-center shrink-0">
+                    {getInitials(session.displayName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-slate-700 dark:text-slate-300 truncate">{session.displayName}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{ROLE_LABELS[session.role]}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </aside>
         </div>
       )}
@@ -290,7 +372,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Global Search */}
-          <div className="relative flex-1 max-w-md hidden md:block">
+          <div className="relative flex-1 max-w-md hidden md:block" data-dropdown>
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="search"
@@ -300,10 +382,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search asset tags, serials, employees, SKUs..."
               aria-label="Global search"
-              className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-sky-600"
+              className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-sky-600 transition-colors"
             />
             {searchFocused && searchQuery.trim().length > 0 && (
-              <div className="absolute left-0 right-0 mt-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden z-40">
+              <div className="absolute left-0 right-0 mt-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden z-40 animate-slide-down">
                 {searchResults.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
                     No matching assets, employees, inventory, or articles.
@@ -318,7 +400,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             navigate(res.path);
                             setSearchQuery('');
                           }}
-                          className="w-full px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-between gap-3"
+                          className="w-full px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-between gap-3 transition-colors"
                         >
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
@@ -341,22 +423,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Right controls */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={cycleTheme}
-              aria-label={`Theme: ${theme}. Switch theme`}
-              title={`Theme: ${theme}`}
-              className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              {theme === 'light' ? (
-                <Sun className="w-4 h-4" />
-              ) : theme === 'dark' ? (
-                <Moon className="w-4 h-4" />
-              ) : (
-                <Monitor className="w-4 h-4" />
-              )}
-            </button>
+          <div className="flex items-center gap-1.5 shrink-0" data-dropdown>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={cycleTheme}
+                aria-label={`Theme: ${getThemeLabel(theme)}. Click to cycle themes`}
+                title={`Theme: ${getThemeLabel(theme)}. Click to cycle themes`}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
+              >
+                {getThemeIcon(theme)}
+                <span className="hidden sm:inline text-xs font-medium text-slate-700 dark:text-slate-200 capitalize">
+                  {theme === 'system' ? 'System' : theme}
+                </span>
+              </button>
+            </div>
 
             {/* Notifications popover */}
             <div className="relative">
@@ -367,7 +448,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setProfileOpen(false);
                 }}
                 aria-label={`Notifications (${unreadCount} unread)`}
-                className="relative p-2 rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="relative p-2 rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
@@ -378,7 +459,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               {notifOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-40">
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-40 animate-slide-down">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
                     <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                       Notifications ({unreadCount} unread)
@@ -454,7 +535,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setNotifOpen(false);
                   }}
                   aria-label="User profile and role menu"
-                  className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                  aria-expanded={profileOpen}
+                  aria-haspopup="true"
+                  className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
                 >
                   <div className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-sky-600 text-white text-xs font-semibold flex items-center justify-center">
                     {getInitials(session.displayName)}
@@ -462,10 +545,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="hidden sm:inline text-xs font-medium text-slate-700 dark:text-slate-200 max-w-[120px] truncate">
                     {session.displayName}
                   </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 hidden sm:inline" />
                 </button>
 
                 {profileOpen && (
-                  <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-40 p-3 space-y-3">
+                  <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-40 p-3 space-y-3 animate-slide-down">
                     <div className="pb-2.5 border-b border-slate-200 dark:border-slate-800">
                       <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
                         {session.displayName}
@@ -473,9 +557,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                         {session.email}
                       </p>
-                      <p className="text-xs font-medium text-sky-700 dark:text-sky-400 mt-1">
-                        {ROLE_LABELS[session.role]}
-                      </p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <Shield className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+                        <p className="text-xs font-medium text-sky-700 dark:text-sky-400">
+                          {ROLE_LABELS[session.role]}
+                        </p>
+                      </div>
                     </div>
 
                     {session.mode === 'local' && (
@@ -490,7 +577,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           id="role-preview-select"
                           value={session.role}
                           onChange={(e) => setActiveRolePreview(e.target.value as UserRole)}
-                          className="w-full h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs text-slate-900 dark:text-slate-100"
+                          className="w-full h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-600"
                         >
                           {Object.entries(ROLE_LABELS).map(([roleKey, roleLabel]) => (
                             <option key={roleKey} value={roleKey}>
@@ -507,7 +594,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         setProfileOpen(false);
                         void logout();
                       }}
-                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       Sign out
@@ -520,12 +607,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {error && (
-          <div className="mx-4 lg:mx-6 mt-4 px-4 py-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/50 flex items-center justify-between gap-3 text-sm text-red-800 dark:text-red-200 no-print">
+          <div className="mx-4 lg:mx-6 mt-4 px-4 py-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/50 flex items-center justify-between gap-3 text-sm text-red-800 dark:text-red-200 no-print animate-slide-down">
             <span className="truncate">{error}</span>
             <button
               type="button"
               onClick={clearError}
-              className="text-xs font-semibold underline shrink-0"
+              className="text-xs font-semibold underline shrink-0 hover:text-red-600 dark:hover:text-red-300"
             >
               Dismiss
             </button>
@@ -536,4 +623,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+}
+
+// Add keyframe animations
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .animate-slide-in-right { animation: slide-in-right 0.2s ease-out; }
+  @keyframes slide-down {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-slide-down { animation: slide-down 0.15s ease-out; }
+`;
+if (typeof document !== 'undefined' && !document.querySelector('#appshell-animations')) {
+  style.id = 'appshell-animations';
+  document.head.appendChild(style);
 }

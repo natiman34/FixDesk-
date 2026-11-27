@@ -1,24 +1,37 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Loader2 } from 'lucide-react';
 import { WorkspaceProvider, useWorkspace } from './context/WorkspaceContext';
 import { ErrorBoundary } from './components/ui/Primitives';
 import { AppShell } from './components/layout/AppShell';
 import type { Permission } from './core/permissions/rbac';
 import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { AssetsPage } from './pages/AssetsPage';
-import { AssignmentsPage } from './pages/AssignmentsPage';
-import { InventoryPage } from './pages/InventoryPage';
-import { EmployeesPage } from './pages/EmployeesPage';
-import { DepartmentsPage } from './pages/DepartmentsPage';
-import { LocationsPage } from './pages/LocationsPage';
-import { MaintenancePage } from './pages/MaintenancePage';
-import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
-import { NetworkToolsPage } from './pages/NetworkToolsPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { ActivityLogPage } from './pages/ActivityLogPage';
-import { SettingsPage } from './pages/SettingsPage';
+
+// Lazy-loaded pages for code splitting
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const AssetsPage = lazy(() => import('./pages/AssetsPage').then((m) => ({ default: m.AssetsPage })));
+const AssignmentsPage = lazy(() => import('./pages/AssignmentsPage').then((m) => ({ default: m.AssignmentsPage })));
+const InventoryPage = lazy(() => import('./pages/InventoryPage').then((m) => ({ default: m.InventoryPage })));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage').then((m) => ({ default: m.EmployeesPage })));
+const DepartmentsPage = lazy(() => import('./pages/DepartmentsPage').then((m) => ({ default: m.DepartmentsPage })));
+const LocationsPage = lazy(() => import('./pages/LocationsPage').then((m) => ({ default: m.LocationsPage })));
+const MaintenancePage = lazy(() => import('./pages/MaintenancePage').then((m) => ({ default: m.MaintenancePage })));
+const KnowledgeBasePage = lazy(() => import('./pages/KnowledgeBasePage').then((m) => ({ default: m.KnowledgeBasePage })));
+const NetworkToolsPage = lazy(() => import('./pages/NetworkToolsPage').then((m) => ({ default: m.NetworkToolsPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const ActivityLogPage = lazy(() => import('./pages/ActivityLogPage').then((m) => ({ default: m.ActivityLogPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+
+function PageLoader() {
+  return (
+    <div className="min-h-[400px] flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400">
+      <div className="text-center space-y-3">
+        <Loader2 className="w-8 h-8 text-sky-600 dark:text-sky-400 animate-spin mx-auto" />
+        <p className="text-sm font-medium">Loading module...</p>
+      </div>
+    </div>
+  );
+}
 
 function RequirePermission({
   permission,
@@ -45,6 +58,16 @@ function RequirePermission({
   return <>{children}</>;
 }
 
+function WithPermission({ permission, Component }: { permission: Permission; Component: React.ComponentType }) {
+  return (
+    <RequirePermission permission={permission}>
+      <Suspense fallback={<PageLoader />}>
+        <Component />
+      </Suspense>
+    </RequirePermission>
+  );
+}
+
 function AuthenticatedApp() {
   const { session, workspace, authReady, loading } = useWorkspace();
 
@@ -66,96 +89,19 @@ function AuthenticatedApp() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route
-          path="/assets"
-          element={
-            <RequirePermission permission="assets:view">
-              <AssetsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/assignments"
-          element={
-            <RequirePermission permission="assignments:view">
-              <AssignmentsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/inventory"
-          element={
-            <RequirePermission permission="inventory:view">
-              <InventoryPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/employees"
-          element={
-            <RequirePermission permission="employees:view">
-              <EmployeesPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/departments"
-          element={
-            <RequirePermission permission="departments:view">
-              <DepartmentsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/locations"
-          element={
-            <RequirePermission permission="locations:view">
-              <LocationsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/maintenance"
-          element={
-            <RequirePermission permission="maintenance:view">
-              <MaintenancePage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/knowledge-base"
-          element={
-            <RequirePermission permission="knowledge:view_employee">
-              <KnowledgeBasePage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/network-tools"
-          element={
-            <RequirePermission permission="network:use">
-              <NetworkToolsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/reports"
-          element={
-            <RequirePermission permission="reports:view">
-              <ReportsPage />
-            </RequirePermission>
-          }
-        />
-        <Route
-          path="/activity-log"
-          element={
-            <RequirePermission permission="audit:view">
-              <ActivityLogPage />
-            </RequirePermission>
-          }
-        />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/" element={<Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>} />
+        <Route path="/assets" element={<WithPermission permission="assets:view" Component={AssetsPage} />} />
+        <Route path="/assignments" element={<WithPermission permission="assignments:view" Component={AssignmentsPage} />} />
+        <Route path="/inventory" element={<WithPermission permission="inventory:view" Component={InventoryPage} />} />
+        <Route path="/employees" element={<WithPermission permission="employees:view" Component={EmployeesPage} />} />
+        <Route path="/departments" element={<WithPermission permission="departments:view" Component={DepartmentsPage} />} />
+        <Route path="/locations" element={<WithPermission permission="locations:view" Component={LocationsPage} />} />
+        <Route path="/maintenance" element={<WithPermission permission="maintenance:view" Component={MaintenancePage} />} />
+        <Route path="/knowledge-base" element={<WithPermission permission="knowledge:view_employee" Component={KnowledgeBasePage} />} />
+        <Route path="/network-tools" element={<WithPermission permission="network:use" Component={NetworkToolsPage} />} />
+        <Route path="/reports" element={<WithPermission permission="reports:view" Component={ReportsPage} />} />
+        <Route path="/activity-log" element={<WithPermission permission="audit:view" Component={ActivityLogPage} />} />
+        <Route path="/settings" element={<Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

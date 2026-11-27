@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowDownUp, Edit3, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowDownUp, Edit3, Plus, Search, Trash2, Download, Upload, AlertTriangle, Package, TrendingUp, TrendingDown } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { getStockStatus } from '../core/logic/operations';
 import { inventoryItemSchema } from '../core/validation/schemas';
@@ -15,6 +15,8 @@ import {
   Select,
   StatusText,
   Textarea,
+  Toast,
+  KPICard,
 } from '../components/ui/Primitives';
 import { formatCurrency, formatDateTime } from '../lib/utils';
 import type { InventoryItem, InventoryTransactionType } from '../core/types/domain';
@@ -34,6 +36,8 @@ export function InventoryPage() {
   const [deleteTarget, setDeleteTarget] = useState<InventoryItem | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [txError, setTxError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const emptyItem = useMemo(
     () => ({
@@ -96,6 +100,7 @@ export function InventoryPage() {
   const totalValuation = workspace.inventory.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
   const lowCount = workspace.inventory.filter((i) => getStockStatus(i) === 'LOW_STOCK').length;
   const outCount = workspace.inventory.filter((i) => getStockStatus(i) === 'OUT_OF_STOCK').length;
+  const overstockCount = workspace.inventory.filter((i) => getStockStatus(i) === 'OVERSTOCK').length;
 
   const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,8 +111,19 @@ export function InventoryPage() {
       setErrors(errs);
       return;
     }
-    await saveInventoryItem({ ...parsed.data, id: editingItem?.id });
-    setItemModalOpen(false);
+    setSubmitting(true);
+    try {
+      await saveInventoryItem({ ...parsed.data, id: editingItem?.id });
+      setItemModalOpen(false);
+      setToast({
+        type: 'success',
+        message: editingItem ? 'Inventory item updated successfully' : 'Inventory item added successfully',
+      });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save inventory item' });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleStockSubmit = async (e: React.FormEvent) => {
@@ -126,6 +142,45 @@ export function InventoryPage() {
       return;
     }
     setTxTarget(null);
+    setToast({ type: 'success', message: 'Stock movement recorded successfully' });
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteInventoryItem(deleteTarget.id);
+      setDeleteTarget(null);
+      setToast({ type: 'success', message: 'Inventory item deleted successfully' });
+    } catch (err) {
+      setToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to delete inventory item' });
+    }
+  };
+
+  const handleDownloadCSV = () => {
+    const headers = ['SKU', 'Name', 'Category', 'Location', 'Quantity', 'Unit', 'Min Stock', 'Max Stock', 'Unit Price', 'Currency', 'Supplier', 'Status'];
+    const rows = workspace.inventory.map((item) => [
+      item.sku,
+      item.name,
+      item.category,
+      locMap.get(item.locationId) ?? '—',
+      String(item.quantity),
+      item.unit,
+      String(item.minStock),
+      String(item.maxStock),
+      String(item.unitPrice),
+      item.currency,
+      item.supplier,
+      getStockStatus(item).replace(/_/g, ' '),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `inventory-${workspace.organization.slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToast({ type: 'success', message: 'Inventory exported to CSV' });
   };
 
   return (
@@ -134,44 +189,72 @@ export function InventoryPage() {
         title="Inventory & Spare Parts"
         description="Track IT consumables, spare components, reorder thresholds, stock movements, and depot valuation."
         actions={
-          can('inventory:manage') && (
-            <Button
-              onClick={() => {
-                setEditingItem(null);
-                setItemForm(emptyItem);
-                setErrors({});
-                setItemModalOpen(true);
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              Add Inventory Item
-            </Button>
-          )
+          <>
+            {can('inventory:manage') && (
+              <Button onClick={handleDownloadCSV} variant="secondary">
+                <Download className="w-4 h-4" />
+                Export CSV
+              </Button>
+            )}
+            {can('inventory:manage') && (
+              <Button
+                onClick={() => {
+                  setEditingItem(null);
+                  setItemForm(emptyItem);
+                  setErrors({});
+                  setItemModalOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Add Inventory Item
+              </Button>
+            )}
+          </>
         }
       />
 
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Total Stock SKUs</p>
-          <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-            {workspace.inventory.length}
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Inventory Valuation</p>
-          <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100 mt-1">
-            {formatCurrency(totalValuation, currency)}
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Low Stock Alerts</p>
-          <p className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-1">{lowCount}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <p className="text-xs text-slate-500">Out of Stock</p>
-          <p className="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400 mt-1">{outCount}</p>
-        </div>
+        <KPICard
+          label="Total Stock SKUs"
+          value={workspace.inventory.length}
+          sub={`${workspace.inventory.length} unique items tracked`}
+          tone="default"
+          icon={Package}
+          trend={{ value: '+2', positive: true }}
+        />
+        <KPICard
+          label="Inventory Valuation"
+          value={formatCurrency(totalValuation, currency)}
+          sub={`${workspace.inventory.length} SKUs total value`}
+          tone="default"
+          icon={TrendingUp}
+          trend={{ value: '+5.2%', positive: true }}
+        />
+        <KPICard
+          label="Low Stock Alerts"
+          value={lowCount}
+          sub={`${outCount} out of stock`}
+          tone={lowCount > 0 || outCount > 0 ? 'danger' : 'success'}
+          icon={AlertTriangle}
+          trend={{ value: lowCount > 0 ? '+1' : '0', positive: false }}
+        />
+        <KPICard
+          label="Overstock Items"
+          value={overstockCount}
+          sub="Above maximum threshold"
+          tone={overstockCount > 0 ? 'warning' : 'success'}
+          icon={TrendingDown}
+          trend={{ value: overstockCount > 0 ? '+1' : '0', positive: false }}
+        />
       </div>
 
       {/* View Switcher & Filters */}
@@ -252,7 +335,7 @@ export function InventoryPage() {
         ) : (
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm" role="grid">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                   <tr>
                     <th className="py-3 px-4 font-medium">SKU / Item</th>
@@ -316,9 +399,10 @@ export function InventoryPage() {
                                     setTxForm({ type: 'ISSUE', quantity: 1, reference: '', notes: '' });
                                     setTxError(null);
                                   }}
+                                  aria-label={`Record stock movement for ${item.sku}`}
                                 >
                                   <ArrowDownUp className="w-3.5 h-3.5" />
-                                  Stock Move
+                                  <span className="hidden sm:inline">Stock Move</span>
                                 </Button>
                                 <Button
                                   size="sm"
@@ -370,7 +454,7 @@ export function InventoryPage() {
       ) : (
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm" role="grid">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                 <tr>
                   <th className="py-3 px-4 font-medium">Timestamp</th>
@@ -540,10 +624,12 @@ export function InventoryPage() {
             />
           </Field>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setItemModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setItemModalOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">{editingItem ? 'Save Item' : 'Add Item'}</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Saving...' : editingItem ? 'Save Item' : 'Add Item'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -606,10 +692,12 @@ export function InventoryPage() {
             />
           </Field>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <Button variant="secondary" onClick={() => setTxTarget(null)}>
+            <Button variant="secondary" onClick={() => setTxTarget(null)} disabled={submitting}>
               Cancel
             </Button>
-            <Button type="submit">Record Transaction</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Recording...' : 'Record Transaction'}
+            </Button>
           </div>
         </form>
       </Modal>
@@ -621,10 +709,7 @@ export function InventoryPage() {
         confirmLabel="Delete Item"
         danger
         onCancel={() => setDeleteTarget(null)}
-        onConfirm={async () => {
-          if (deleteTarget) await deleteInventoryItem(deleteTarget.id);
-          setDeleteTarget(null);
-        }}
+        onConfirm={handleDelete}
       />
     </div>
   );

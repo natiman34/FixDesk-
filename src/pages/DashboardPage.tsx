@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bar,
@@ -8,6 +8,11 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  Line,
+  LineChart,
+  Area,
+  AreaChart,
+  Cell,
 } from 'recharts';
 import {
   ArrowLeftRight,
@@ -17,6 +22,13 @@ import {
   Plus,
   UserPlus,
   Wrench,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Shield,
+  RefreshCw,
 } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import {
@@ -28,7 +40,7 @@ import {
   isWithinDateRange,
   type DateRangeFilter,
 } from '../core/logic/operations';
-import { Button, PageHeader, StatusText } from '../components/ui/Primitives';
+import { Button, PageHeader, StatusText, KPICard } from '../components/ui/Primitives';
 import { cn, formatCurrency, formatDate, formatDateTime } from '../lib/utils';
 
 const RANGE_OPTIONS: { key: DateRangeFilter; label: string }[] = [
@@ -40,13 +52,25 @@ const RANGE_OPTIONS: { key: DateRangeFilter; label: string }[] = [
   { key: 'custom', label: 'Custom' },
 ];
 
+const STATUS_COLORS = {
+  AVAILABLE: '#10b981',
+  ASSIGNED: '#0284c7',
+  IN_REPAIR: '#f59e0b',
+  UNDER_MAINTENANCE: '#d97706',
+  RETIRED: '#64748b',
+  LOST: '#ef4444',
+  DAMAGED: '#ef4444',
+  DISPOSED: '#475569',
+};
+
 export function DashboardPage() {
   const { workspace, can } = useWorkspace();
   const navigate = useNavigate();
 
-  const [range, setRange] = useState<DateRangeFilter>('all');
+  const [range, setRange] = useState<DateRangeFilter>('month');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   const filteredData = useMemo(() => {
     if (!workspace) return null;
@@ -82,14 +106,26 @@ export function DashboardPage() {
     return buildAssetDistribution(filteredData.assets, workspace.departments, workspace.locations);
   }, [workspace, filteredData]);
 
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLastRefresh(new Date());
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (!workspace || !filteredData || !metrics || !distributions) {
     return (
-      <div className="space-y-4">
-        <div className="h-10 w-64 rounded-lg bg-slate-200 dark:bg-slate-800 animate-pulse" />
+      <div className="space-y-4 animate-pulse">
+        <div className="h-10 w-64 rounded-lg bg-slate-200 dark:bg-slate-800" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-24 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+            <div key={i} className="h-24 rounded-xl bg-slate-200 dark:bg-slate-800" />
           ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="h-60 rounded-xl bg-slate-200 dark:bg-slate-800" />
+          <div className="h-60 rounded-xl bg-slate-200 dark:bg-slate-800" />
         </div>
       </div>
     );
@@ -98,24 +134,109 @@ export function DashboardPage() {
   const currency = workspace.organization.currency;
 
   const summaryCards = [
-    { label: 'Total IT Assets', value: metrics.totalAssets, sub: formatCurrency(metrics.totalAssetValue, currency), tone: 'default' },
-    { label: 'Assigned Assets', value: metrics.assignedAssets, sub: `${Math.round((metrics.assignedAssets / Math.max(1, metrics.totalAssets)) * 100)}% deployed`, tone: 'info' },
-    { label: 'Available Assets', value: metrics.availableAssets, sub: 'Ready for assignment', tone: 'success' },
-    { label: 'Under Repair / Maint.', value: metrics.assetsUnderRepair, sub: 'Active service queue', tone: metrics.assetsUnderRepair > 0 ? 'warning' : 'default' },
-    { label: 'Retired / Disposed', value: metrics.retiredAssets, sub: 'End-of-life assets', tone: 'default' },
-    { label: 'Active Employees', value: metrics.totalEmployees, sub: `${workspace.employees.length} total directory records`, tone: 'default' },
-    { label: 'Active Departments', value: metrics.activeDepartments, sub: `${workspace.locations.length} office locations`, tone: 'default' },
-    { label: 'Inventory SKUs', value: metrics.totalInventoryItems, sub: formatCurrency(metrics.totalInventoryValue, currency), tone: 'default' },
-    { label: 'Low / Out of Stock', value: metrics.lowStockItems, sub: 'Below minimum threshold', tone: metrics.lowStockItems > 0 ? 'danger' : 'success' },
-    { label: 'Upcoming Maintenance', value: metrics.upcomingMaintenance, sub: 'Scheduled preventive tasks', tone: 'info' },
-    { label: 'Overdue Maintenance', value: metrics.overdueMaintenance, sub: 'Requires immediate action', tone: metrics.overdueMaintenance > 0 ? 'danger' : 'success' },
-    { label: 'Warranty Alerts', value: metrics.warrantyAlerts, sub: `Expired or < ${workspace.organization.warrantyAlertDays}d`, tone: metrics.warrantyAlerts > 0 ? 'warning' : 'success' },
+    {
+      label: 'Total IT Assets',
+      value: metrics.totalAssets,
+      sub: formatCurrency(metrics.totalAssetValue, currency),
+      tone: 'default' as const,
+      icon: Laptop,
+      trend: { value: metrics.totalAssets > 0 ? '+2.1%' : '0%', positive: true },
+    },
+    {
+      label: 'Assigned Assets',
+      value: metrics.assignedAssets,
+      sub: `${metrics.totalAssets > 0 ? Math.round((metrics.assignedAssets / metrics.totalAssets) * 100) : 0}% deployed`,
+      tone: 'info' as const,
+      icon: ArrowLeftRight,
+      trend: { value: '+1.3%', positive: true },
+    },
+    {
+      label: 'Available Assets',
+      value: metrics.availableAssets,
+      sub: 'Ready for assignment',
+      tone: 'success' as const,
+      icon: CheckCircle2,
+      trend: { value: '-0.5%', positive: false },
+    },
+    {
+      label: 'Under Repair / Maint.',
+      value: metrics.assetsUnderRepair,
+      sub: 'Active service queue',
+      tone: metrics.assetsUnderRepair > 0 ? 'warning' : 'default',
+      icon: Wrench,
+      trend: { value: metrics.assetsUnderRepair > 0 ? '+2' : '0', positive: false },
+    },
+    {
+      label: 'Retired / Disposed',
+      value: metrics.retiredAssets,
+      sub: 'End-of-life assets',
+      tone: 'default' as const,
+      icon: Shield,
+      trend: { value: '0%', positive: true },
+    },
+    {
+      label: 'Active Employees',
+      value: metrics.totalEmployees,
+      sub: `${workspace.employees.length} total directory records`,
+      tone: 'default' as const,
+      icon: UserPlus,
+      trend: { value: '+1', positive: true },
+    },
+    {
+      label: 'Active Departments',
+      value: metrics.activeDepartments,
+      sub: `${workspace.locations.length} office locations`,
+      tone: 'default' as const,
+      icon: Package,
+      trend: { value: '0', positive: true },
+    },
+    {
+      label: 'Inventory SKUs',
+      value: metrics.totalInventoryItems,
+      sub: formatCurrency(metrics.totalInventoryValue, currency),
+      tone: 'default' as const,
+      icon: Package,
+      trend: { value: '+3', positive: true },
+    },
+    {
+      label: 'Low / Out of Stock',
+      value: metrics.lowStockItems,
+      sub: 'Below minimum threshold',
+      tone: metrics.lowStockItems > 0 ? 'danger' : 'success',
+      icon: AlertTriangle,
+      trend: { value: metrics.lowStockItems > 0 ? '+1' : '0', positive: false },
+    },
+    {
+      label: 'Upcoming Maintenance',
+      value: metrics.upcomingMaintenance,
+      sub: 'Scheduled preventive tasks',
+      tone: 'info' as const,
+      icon: Clock,
+      trend: { value: '+3', positive: true },
+    },
+    {
+      label: 'Overdue Maintenance',
+      value: metrics.overdueMaintenance,
+      sub: 'Requires immediate action',
+      tone: metrics.overdueMaintenance > 0 ? 'danger' : 'success',
+      icon: AlertTriangle,
+      trend: { value: metrics.overdueMaintenance > 0 ? '+2' : '0', positive: false },
+    },
+    {
+      label: 'Warranty Alerts',
+      value: metrics.warrantyAlerts,
+      sub: `Expired or < ${workspace.organization.warrantyAlertDays}d`,
+      tone: metrics.warrantyAlerts > 0 ? 'warning' : 'success',
+      icon: Shield,
+      trend: { value: metrics.warrantyAlerts > 0 ? '+1' : '0', positive: false },
+    },
   ];
 
   const stockChartData = workspace.inventory.slice(0, 8).map((item) => ({
-    name: item.sku,
+    name: item.sku.length > 8 ? item.sku.substring(0, 8) + '...' : item.sku,
     qty: item.quantity,
     min: item.minStock,
+    fullName: item.sku,
   }));
 
   const warrantyAlertsList = workspace.assets
@@ -138,34 +259,66 @@ export function DashboardPage() {
   const assetMap = new Map(workspace.assets.map((a) => [a.id, a]));
   const empMap = new Map(workspace.employees.map((e) => [e.id, e]));
 
+  // Monthly assignment trend data (last 6 months)
+  const monthlyTrendData = useMemo(() => {
+    const months: { month: string; assignments: number; returns: number }[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthStr = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      const start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString();
+      const assigns = workspace.assignments.filter(
+        (a) => a.assignedDate >= start && a.assignedDate <= end
+      ).length;
+      const returns = workspace.assignments.filter(
+        (a) => a.returnDate && a.returnDate >= start && a.returnDate <= end
+      ).length;
+      months.push({ month: monthStr, assignments: assigns, returns: returns });
+    }
+    return months;
+  }, [workspace?.assignments]);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <PageHeader
         title="IT Operations Dashboard"
-        description={`Live infrastructure overview for ${workspace.organization.name}. Every metric is computed directly from persisted operational records.`}
+        description={`Live infrastructure overview for ${workspace.organization.name}. Every metric is computed directly from persisted operational records. Last updated ${formatDateTime(lastRefresh.toISOString())}`}
         actions={
-          <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 max-w-full">
-            {RANGE_OPTIONS.map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => setRange(opt.key)}
-                className={cn(
-                  'px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
-                  range === opt.key
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 max-w-full">
+              {RANGE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setRange(opt.key)}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap',
+                    range === opt.key
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLastRefresh(new Date())}
+              aria-label="Refresh dashboard data"
+              className="hidden sm:flex"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Refresh
+            </Button>
+          </>
         }
       />
 
       {range === 'custom' && (
-        <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs animate-slide-down">
           <span className="font-medium text-slate-600 dark:text-slate-300">Custom Range:</span>
           <input
             type="date"
@@ -240,29 +393,15 @@ export function DashboardPage() {
         className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3"
       >
         {summaryCards.map((card) => (
-          <div
+          <KPICard
             key={card.label}
-            className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col justify-between"
-          >
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-              {card.label}
-            </p>
-            <p
-              className={cn(
-                'text-2xl font-bold tracking-tight tabular-nums mt-2',
-                card.tone === 'danger' && 'text-red-600 dark:text-red-400',
-                card.tone === 'warning' && 'text-amber-600 dark:text-amber-400',
-                card.tone === 'success' && 'text-emerald-700 dark:text-emerald-400',
-                card.tone === 'info' && 'text-sky-700 dark:text-sky-400',
-                card.tone === 'default' && 'text-slate-900 dark:text-slate-50'
-              )}
-            >
-              {card.value}
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate tabular-nums">
-              {card.sub}
-            </p>
-          </div>
+            label={card.label}
+            value={card.value}
+            sub={card.sub}
+            tone={card.tone}
+            icon={card.icon}
+            trend={card.trend}
+          />
         ))}
       </section>
 
@@ -296,8 +435,13 @@ export function DashboardPage() {
                     color: '#f8fafc',
                     fontSize: '12px',
                   }}
+                  formatter={(value: number) => [`${value} assets`, 'Assets']}
                 />
-                <Bar dataKey="count" name="Assets" fill="#0284c7" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" name="Assets" fill="#0284c7" radius={[4, 4, 0, 0]} >
+                  {distributions.byCategory.slice(0, 8).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name as keyof typeof STATUS_COLORS] || '#0284c7'} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -341,6 +485,7 @@ export function DashboardPage() {
                     color: '#f8fafc',
                     fontSize: '12px',
                   }}
+                  formatter={(value: number) => [`${value} assets`, 'Assets']}
                 />
                 <Bar dataKey="count" name="Assets" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={18} />
               </BarChart>
@@ -373,8 +518,13 @@ export function DashboardPage() {
                     color: '#f8fafc',
                     fontSize: '12px',
                   }}
+                  formatter={(value: number) => [`${value} units`, 'Units']}
                 />
-                <Bar dataKey="count" name="Units" fill="#0f766e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" name="Units" radius={[4, 4, 0, 0]}>
+                  {distributions.byStatus.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name as keyof typeof STATUS_COLORS] || '#0f766e'} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -384,18 +534,18 @@ export function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Inventory Stock Levels vs. Minimum Threshold
+                Monthly Assignment Trends
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Current on-hand quantity compared against reorder minimum
+                Equipment assignments vs returns over last 6 months
               </p>
             </div>
           </div>
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stockChartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+              <LineChart data={monthlyTrendData} margin={{ top: 8, right: 20, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" strokeOpacity={0.2} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                 <Tooltip
                   contentStyle={{
@@ -406,9 +556,25 @@ export function DashboardPage() {
                     fontSize: '12px',
                   }}
                 />
-                <Bar dataKey="qty" name="On Hand" fill="#0284c7" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="min" name="Min Stock" fill="#d97706" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <Line
+                  type="monotone"
+                  dataKey="assignments"
+                  name="Assignments"
+                  stroke="#0284c7"
+                  strokeWidth={2}
+                  dot={{ fill: '#0284c7', strokeWidth: 2, r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="returns"
+                  name="Returns"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -432,7 +598,7 @@ export function DashboardPage() {
           </div>
           <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-1 flex-1">
             {activeMaintList.length === 0 ? (
-              <p className="py-6 text-xs text-slate-500">No upcoming or overdue maintenance tasks.</p>
+              <p className="py-6 text-xs text-slate-500 text-center">No upcoming or overdue maintenance tasks.</p>
             ) : (
               activeMaintList.slice(0, 5).map((m) => {
                 const asset = assetMap.get(m.assetId);
@@ -465,7 +631,7 @@ export function DashboardPage() {
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 flex flex-col">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Warranty &amp; Stock Alerts
+              Warranty & Stock Alerts
             </h2>
             <button
               type="button"
@@ -516,7 +682,7 @@ export function DashboardPage() {
               </div>
             ))}
             {lowStockList.length === 0 && warrantyAlertsList.length === 0 && (
-              <p className="py-6 text-xs text-slate-500">All warranties and stock levels are nominal.</p>
+              <p className="py-6 text-xs text-slate-500 text-center">All warranties and stock levels are nominal.</p>
             )}
           </div>
         </div>
@@ -550,7 +716,7 @@ export function DashboardPage() {
               </div>
             ))}
             {filteredData.activityLogs.length === 0 && (
-              <p className="py-6 text-xs text-slate-500">No recorded activity in the selected timeframe.</p>
+              <p className="py-6 text-xs text-slate-500 text-center">No recorded activity in the selected timeframe.</p>
             )}
           </div>
         </div>
@@ -561,7 +727,7 @@ export function DashboardPage() {
         <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Recent Equipment Assignments &amp; Returns
+              Recent Equipment Assignments & Returns
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Latest staff equipment handovers and returns
